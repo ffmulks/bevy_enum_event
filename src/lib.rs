@@ -1,9 +1,9 @@
 //! General-purpose enum to Bevy event conversion macro.
 //!
 //! This crate provides a derive macro that generates Bevy event types from enum variants.
-//! For each variant, it creates a corresponding event struct in a snake_case module.
+//! For each variant, it creates a corresponding event struct in a `snake_case` module.
 //!
-//! # Example
+//! # Example (Unit Variants)
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
@@ -34,6 +34,71 @@
 //! }
 //! ```
 //!
+//! # Example (Variants with Data)
+//!
+//! ```
+//! use bevy_enum_events::EnumEvents;
+//!
+//! #[derive(EnumEvents, Clone)]
+//! enum GameEvent {
+//!     Victory(String),
+//!     ScoreChanged { team: u32, score: i32 },
+//!     GameOver,
+//! }
+//! ```
+//!
+//! This generates:
+//!
+//! ```rust,ignore
+//! pub mod game_event {
+//!     use bevy::prelude::Event;
+//!
+//!     #[derive(Event, Clone, Debug)]
+//!     pub struct Victory(pub String);
+//!
+//!     #[derive(Event, Clone, Debug)]
+//!     pub struct ScoreChanged {
+//!         pub team: u32,
+//!         pub score: i32,
+//!     }
+//!
+//!     #[derive(Event, Clone, Debug)]
+//!     pub struct GameOver;
+//! }
+//! ```
+//!
+//! # Feature: `deref` (enabled by default)
+//!
+//! When the `deref` feature is enabled (which it is by default), enum variants with a single
+//! field or tuple value will automatically derive `Deref` and `DerefMut`, allowing direct access
+//! to the inner value:
+//!
+#![cfg_attr(feature = "deref", doc = r#"
+```
+use bevy_enum_events::EnumEvents;
+use std::ops::Deref;
+
+#[derive(EnumEvents, Clone)]
+enum NetworkEvent {
+    MessageReceived(String),
+    Disconnected,
+}
+
+// Test that deref works
+let msg = network_event::MessageReceived("Hello".to_string());
+let content: &String = msg.deref();
+assert_eq!(content, "Hello");
+```
+"#)]
+//!
+//!
+//! To disable this feature, add the following to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! bevy_enum_events = { version = "0.1", default-features = false }
+//! ```
+//!
 //! # Usage with Observers
 //!
 //! ```rust,no_run
@@ -56,7 +121,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
-/// Converts PascalCase or camelCase to snake_case.
+/// Converts `PascalCase` or `camelCase` to `snake_case`.
 ///
 /// Handles acronyms gracefully: `FSMState` → `fsm_state`, `HTTPServer` → `http_server`
 fn to_snake_case(s: &str) -> String {
@@ -89,11 +154,15 @@ fn to_snake_case(s: &str) -> String {
 /// # Requirements
 ///
 /// - Can only be derived for enums
-/// - All variants must be unit variants (no fields)
+/// - Supports unit variants, tuple variants, and named field variants
+///
+/// # Panics
+///
+/// Panics if applied to a non-enum type (struct, union, etc.)
 ///
 /// # Generated Code
 ///
-/// For an enum named `MyEnum` with variants `VariantA`, `VariantB`, this macro generates:
+/// For an enum named `MyEnum` with various variant types, this macro generates:
 ///
 /// ```rust,ignore
 /// pub mod my_enum {
@@ -102,8 +171,14 @@ fn to_snake_case(s: &str) -> String {
 ///     #[derive(Event, Clone, Copy, Debug)]
 ///     pub struct VariantA;
 ///
-///     #[derive(Event, Clone, Copy, Debug)]
-///     pub struct VariantB;
+///     #[derive(Event, Clone, Debug)]
+///     pub struct VariantB(pub String);
+///
+///     #[derive(Event, Clone, Debug)]
+///     pub struct VariantC {
+///         pub field1: i32,
+///         pub field2: String,
+///     }
 /// }
 /// ```
 ///
@@ -115,17 +190,22 @@ fn to_snake_case(s: &str) -> String {
 /// #[derive(EnumEvents)]
 /// enum Action {
 ///     Jump,
-///     Run,
-///     Attack,
+///     Run(f32),  // speed
+///     Attack { damage: i32, critical: bool },
 /// }
 ///
 /// // Generated module:
 /// // pub mod action {
 /// //     pub struct Jump;
-/// //     pub struct Run;
-/// //     pub struct Attack;
+/// //     pub struct Run(pub f32);
+/// //     pub struct Attack { pub damage: i32, pub critical: bool }
 /// // }
 /// ```
+///
+/// # Deref Feature
+///
+/// When the `deref` feature is enabled (default), single-field variants automatically
+/// implement `Deref` and `DerefMut` for convenient access to the inner value.
 #[proc_macro_derive(EnumEvents)]
 pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -137,30 +217,118 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
         _ => panic!("EnumEvents can only be derived for enums"),
     };
 
-    // Verify all variants are unit variants
-    for variant in variants {
-        if !matches!(variant.fields, Fields::Unit) {
-            panic!("EnumEvents enum variants must be unit variants (no fields)");
-        }
-    }
-
-    let variant_idents: Vec<_> = variants.iter().map(|v| &v.ident).collect();
-
-    // Generate the module structure with variant event types
     // Convert EnumName to snake_case for module name
     let module_name_str = to_snake_case(&enum_name.to_string());
     let module_name = syn::Ident::new(&module_name_str, enum_name.span());
+
+    // Generate struct definitions for each variant
+    let struct_defs: Vec<_> = variants
+        .iter()
+        .map(|variant| {
+            let variant_ident = &variant.ident;
+
+            match &variant.fields {
+                Fields::Unit => {
+                    // Unit variant: generate a unit struct
+                    quote! {
+                        /// Event type corresponding to the enum variant.
+                        #[derive(Event, Clone, Copy, Debug)]
+                        pub struct #variant_ident;
+                    }
+                }
+                Fields::Unnamed(fields) => {
+                    // Tuple variant: generate a tuple struct
+                    let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
+                    let is_single_field = field_types.len() == 1;
+
+                    if is_single_field && cfg!(feature = "deref") {
+                        // Single field with deref feature: add Deref and DerefMut
+                        let field_type = &field_types[0];
+                        quote! {
+                            /// Event type corresponding to the enum variant.
+                            #[derive(Event, Clone, Debug)]
+                            pub struct #variant_ident(pub #field_type);
+
+                            #[cfg(feature = "deref")]
+                            impl ::core::ops::Deref for #variant_ident {
+                                type Target = #field_type;
+
+                                fn deref(&self) -> &Self::Target {
+                                    &self.0
+                                }
+                            }
+
+                            #[cfg(feature = "deref")]
+                            impl ::core::ops::DerefMut for #variant_ident {
+                                fn deref_mut(&mut self) -> &mut Self::Target {
+                                    &mut self.0
+                                }
+                            }
+                        }
+                    } else {
+                        // Multiple fields or deref disabled: just the struct
+                        quote! {
+                            /// Event type corresponding to the enum variant.
+                            #[derive(Event, Clone, Debug)]
+                            pub struct #variant_ident(#(pub #field_types),*);
+                        }
+                    }
+                }
+                Fields::Named(fields) => {
+                    // Named fields variant: generate a struct with named fields
+                    let field_defs: Vec<_> = fields.named.iter().collect();
+                    let is_single_field = field_defs.len() == 1;
+
+                    if is_single_field && cfg!(feature = "deref") {
+                        // Single field with deref feature: add Deref and DerefMut
+                        let field = &field_defs[0];
+                        let field_name = field.ident.as_ref().unwrap();
+                        let field_type = &field.ty;
+
+                        quote! {
+                            /// Event type corresponding to the enum variant.
+                            #[derive(Event, Clone, Debug)]
+                            pub struct #variant_ident {
+                                pub #field_name: #field_type,
+                            }
+
+                            #[cfg(feature = "deref")]
+                            impl ::core::ops::Deref for #variant_ident {
+                                type Target = #field_type;
+
+                                fn deref(&self) -> &Self::Target {
+                                    &self.#field_name
+                                }
+                            }
+
+                            #[cfg(feature = "deref")]
+                            impl ::core::ops::DerefMut for #variant_ident {
+                                fn deref_mut(&mut self) -> &mut Self::Target {
+                                    &mut self.#field_name
+                                }
+                            }
+                        }
+                    } else {
+                        // Multiple fields or deref disabled: just the struct
+                        quote! {
+                            /// Event type corresponding to the enum variant.
+                            #[derive(Event, Clone, Debug)]
+                            pub struct #variant_ident {
+                                #(pub #field_defs),*
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .collect();
 
     let expanded = quote! {
         /// Generated module containing event types for each enum variant.
         pub mod #module_name {
             use bevy::prelude::Event;
 
-            #(
-                /// Event type corresponding to the enum variant.
-                #[derive(Event, Clone, Copy, Debug)]
-                pub struct #variant_idents;
-            )*
+            #(#struct_defs)*
         }
     };
 

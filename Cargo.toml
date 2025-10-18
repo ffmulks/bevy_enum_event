@@ -3,15 +3,19 @@ name = "bevy_enum_events"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "General-purpose enum to Bevy event conversion macro - generates event types from enum variants"
+description = "General-purpose enum to Bevy event conversion macro - generates event types from enum variants with support for data-carrying variants"
 repository = "https://github.com/drmulks/bevy_enum_events"
-authors = ["Dr. Florian Mulks <dr@mulks.ac>"]
+authors = ["Dr. Florian Mulks <ff@mulks.ac>"]
 keywords = ["bevy", "enum", "events", "macro"]
 categories = ["game-development"]
 readme = "README.md"
 
 [lib]
 proc-macro = true
+
+[features]
+default = ["deref"]
+deref = []
 
 [dependencies]
 syn = { version = "2.0", features = ["full"] }

@@ -4,15 +4,24 @@ General-purpose enum to Bevy event conversion macro.
 
 ## Overview
 
-`bevy_enum_events` provides a derive macro that automatically generates Bevy event types from enum variants. For each variant in your enum, it creates a corresponding event struct organized in a snake_case module.
+`bevy_enum_events` provides a derive macro that automatically generates Bevy event types from enum variants. For each variant in your enum, it creates a corresponding event struct organized in a snake_case module. Supports unit variants, tuple variants, and named field variants.
+
+## Bevy Compatibility
+
+|  Bevy   | bevy_fsm |
+|---------|----------|
+| 0.17    | -        |
+| 0.16    | 0.1      |
 
 ## Features
 
 - **Automatic event generation**: One macro generates all variant events
+- **Support for data-carrying variants**: Enum variants can contain data (tuple or named fields)
 - **Snake case module**: `PlayerState` → `player_state` module
 - **Zero boilerplate**: No manual event struct definitions needed
 - **Type-safe**: Each variant gets its own distinct event type
 - **Bevy integration**: Generated events work seamlessly with Bevy's observer system
+- **Deref support** (optional): Automatic `Deref` and `DerefMut` for single-field variants
 
 ## Installation
 
@@ -22,6 +31,8 @@ bevy_enum_events = "0.1"
 ```
 
 ## Quick Start
+
+### Unit Variants
 
 ```rust
 use bevy::prelude::*;
@@ -52,7 +63,43 @@ pub mod player_state {
 }
 ```
 
+### Variants with Data
+
+```rust
+use bevy::prelude::*;
+use bevy_enum_events::EnumEvents;
+
+#[derive(EnumEvents, Clone)]
+enum GameEvent {
+    PlayerSpawned(Entity),
+    ScoreChanged { player: Entity, score: i32 },
+    GameOver,
+}
+```
+
+This generates:
+
+```rust
+pub mod game_event {
+    use bevy::prelude::Event;
+
+    #[derive(Event, Clone, Debug)]
+    pub struct PlayerSpawned(pub Entity);
+
+    #[derive(Event, Clone, Debug)]
+    pub struct ScoreChanged {
+        pub player: Entity,
+        pub score: i32,
+    }
+
+    #[derive(Event, Clone, Debug)]
+    pub struct GameOver;
+}
+```
+
 ## Usage with Bevy Observers
+
+### Basic Example
 
 ```rust
 use bevy::prelude::*;
@@ -74,26 +121,78 @@ fn on_paused(trigger: Trigger<game_state::Paused>) {
 }
 ```
 
-## Requirements
+### With Event Data
 
-- Enum must contain only unit variants (no data fields)
-- Example:
-  ```rust
-  // ✅ Valid
-  #[derive(EnumEvents)]
-  enum State {
-      A,
-      B,
-      C,
-  }
+```rust
+use bevy::prelude::*;
+use bevy_enum_events::EnumEvents;
 
-  // ❌ Invalid - has data
-  #[derive(EnumEvents)]
-  enum State {
-      A(u32),  // Error: variants must be unit variants
-      B,
-  }
-  ```
+#[derive(EnumEvents, Clone)]
+enum EntityEvent {
+    Spawned(Entity),
+    Damaged { entity: Entity, amount: f32 },
+    Destroyed(Entity),
+}
+
+fn on_entity_damaged(trigger: Trigger<entity_event::Damaged>) {
+    let event = trigger.event();
+    println!("Entity {:?} took {} damage", event.entity, event.amount);
+}
+
+fn on_entity_spawned(trigger: Trigger<entity_event::Spawned>) {
+    // With the deref feature (enabled by default), you can access the Entity directly
+    let entity: Entity = *trigger.event();
+    println!("Entity spawned: {:?}", entity);
+}
+```
+
+## Feature: `deref` (enabled by default)
+
+The `deref` feature automatically implements `Deref` and `DerefMut` for enum variants with a single field (either tuple or named), allowing convenient access to the inner value.
+
+### Example
+
+```rust
+use bevy::prelude::*;
+use bevy_enum_events::EnumEvents;
+
+#[derive(EnumEvents, Clone)]
+enum EntityEvent {
+    Spawned(Entity),
+    Destroyed(Entity),
+    HealthChanged { value: f32 },
+}
+
+fn on_spawned(trigger: Trigger<entity_event::Spawned>) {
+    // With deref feature, you can access the Entity directly
+    let entity: Entity = *trigger.event();
+    println!("Entity spawned: {:?}", entity);
+}
+
+fn on_health_changed(trigger: Trigger<entity_event::HealthChanged>) {
+    // Deref also works for named single-field variants
+    let health: f32 = *trigger.event();
+    println!("Health changed to: {}", health);
+}
+```
+
+### Disabling the `deref` Feature
+
+If you prefer not to have `Deref` and `DerefMut` automatically implemented, you can disable the default features:
+
+```toml
+[dependencies]
+bevy_enum_events = { version = "0.1", default-features = false }
+```
+
+When disabled, you'll need to access fields directly:
+
+```rust
+fn on_spawned(trigger: Trigger<entity_event::Spawned>) {
+    let entity: Entity = trigger.event().0;  // Access via .0
+    println!("Entity spawned: {:?}", entity);
+}
+```
 
 ## Snake Case Conversion
 
@@ -112,6 +211,14 @@ The macro intelligently converts enum names to snake_case module names:
 - Animation states
 - Input modes
 - Any enum-based event system
+- Network message events
+- Input/Output events with associated data
+
+## AI Disclaimer
+
+- Refactoring and documentation supported by Claude Code
+- Minor editing supported by ChatGPT Codex
+- The process and final releases are thoroughly supervised and checked by the author
 
 ## License
 
