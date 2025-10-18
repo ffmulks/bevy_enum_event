@@ -2,6 +2,7 @@ use bevy_enum_events::EnumEvents;
 
 // Test unit variants
 #[derive(EnumEvents, Clone, Copy, Debug, PartialEq)]
+#[allow(dead_code)]
 enum UnitEnum {
     A,
     B,
@@ -22,6 +23,7 @@ fn test_unit_variants() {
 
 // Test tuple variants
 #[derive(EnumEvents, Clone, Debug)]
+#[allow(dead_code)]
 enum TupleEnum {
     Single(u32),
     Multiple(String, i32),
@@ -44,6 +46,7 @@ fn test_tuple_variants() {
 
 // Test named field variants
 #[derive(EnumEvents, Clone, Debug)]
+#[allow(dead_code)]
 enum NamedEnum {
     SingleField { value: u32 },
     MultipleFields { name: String, count: i32 },
@@ -69,6 +72,7 @@ fn test_named_field_variants() {
 
 // Test mixed variants
 #[derive(EnumEvents, Clone, Debug)]
+#[allow(dead_code)]
 enum MixedEnum {
     Unit,
     Tuple(String),
@@ -92,6 +96,7 @@ fn test_mixed_variants() {
 #[test]
 fn test_deref_tuple_variant() {
     #[derive(EnumEvents, Clone)]
+    #[allow(dead_code)]
     enum DerefTuple {
         Value(String),
     }
@@ -99,11 +104,11 @@ fn test_deref_tuple_variant() {
     let mut val = deref_tuple::Value("test".to_string());
 
     // Test Deref
-    let s: &String = &*val;
+    let s: &String = &val;
     assert_eq!(s, "test");
 
     // Test DerefMut
-    let s_mut: &mut String = &mut *val;
+    let s_mut: &mut String = &mut val;
     s_mut.push_str("_modified");
     assert_eq!(val.0, "test_modified");
 }
@@ -113,6 +118,7 @@ fn test_deref_tuple_variant() {
 #[test]
 fn test_deref_named_variant() {
     #[derive(EnumEvents, Clone)]
+    #[allow(dead_code)]
     enum DerefNamed {
         Value { data: String },
     }
@@ -122,11 +128,11 @@ fn test_deref_named_variant() {
     };
 
     // Test Deref
-    let s: &String = &*val;
+    let s: &String = &val;
     assert_eq!(s, "test");
 
     // Test DerefMut
-    let s_mut: &mut String = &mut *val;
+    let s_mut: &mut String = &mut val;
     s_mut.push_str("_modified");
     assert_eq!(val.data, "test_modified");
 }
@@ -135,6 +141,7 @@ fn test_deref_named_variant() {
 #[test]
 fn test_multi_field_variants() {
     #[derive(EnumEvents, Clone)]
+    #[allow(dead_code)]
     enum MultiField {
         Multiple(String, i32),
         MultipleNamed { a: String, b: i32 },
@@ -156,6 +163,7 @@ fn test_multi_field_variants() {
 #[test]
 fn test_clone() {
     #[derive(EnumEvents, Clone)]
+    #[allow(dead_code)]
     enum CloneEnum {
         Value(String),
     }
@@ -169,6 +177,7 @@ fn test_clone() {
 #[test]
 fn test_debug() {
     #[derive(EnumEvents, Clone, Debug)]
+    #[allow(dead_code)]
     enum DebugEnum {
         Value(String),
     }

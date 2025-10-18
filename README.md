@@ -203,6 +203,30 @@ The macro intelligently converts enum names to snake_case module names:
 - `HTTPServer` → `http_server`
 - `MyHTTPSConnection` → `my_https_connection`
 
+## Advanced: `enum_module_ident!` Macro
+
+For library authors building on top of `bevy_enum_events`, the `enum_module_ident!` macro provides programmatic access to the generated module names:
+
+```rust
+use bevy_enum_events::enum_module_ident;
+
+// Expands to the identifier: life_fsm
+enum_module_ident!(LifeFSM);
+
+// Can be used with stringify! to get the string representation
+let module_name = stringify!(enum_module_ident!(PlayerState));
+assert_eq!(module_name, "player_state");
+```
+
+### Use Cases
+
+This macro is particularly useful for:
+- Libraries like [`bevy_fsm`](https://crates.io/crates/bevy_fsm) that need to reference generated module names
+- Code generation tools that work with `EnumEvents`
+- Macros that compose with `EnumEvents`
+
+Most users won't need this macro directly, as they can reference the generated modules by their snake_case names (e.g., `player_state::Idle`).
+
 ## Use Cases
 
 - State machines (see [bevy_fsm](https://crates.io/crates/bevy_fsm))

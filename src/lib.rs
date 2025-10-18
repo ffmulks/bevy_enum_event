@@ -117,6 +117,22 @@ assert_eq!(content, "Hello");
 //! }
 //! ```
 
+//! # Helper Macro: `enum_module_ident!`
+//!
+//! For advanced use cases (like building wrapper crates), the `enum_module_ident!` macro
+//! provides access to the module name that `EnumEvents` would generate.
+//!
+//! ```ignore
+//! use bevy_enum_events::enum_module_ident;
+//!
+//! // This expands to the identifier: life_fsm
+//! let module_name = stringify!(enum_module_ident!(LifeFSM));
+//! assert_eq!(module_name, "life_fsm");
+//! ```
+//!
+//! This is particularly useful for libraries like `bevy_fsm` that need to programmatically
+//! reference the generated module names.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
@@ -206,6 +222,46 @@ fn to_snake_case(s: &str) -> String {
 ///
 /// When the `deref` feature is enabled (default), single-field variants automatically
 /// implement `Deref` and `DerefMut` for convenient access to the inner value.
+/// Procedural macro that converts a type identifier to its `snake_case` module identifier.
+///
+/// This generates the same module name that `EnumEvents` would create, allowing
+/// programmatic access to generated module names in consuming crates.
+///
+/// # Example
+///
+/// ```ignore
+/// use bevy_enum_events::enum_module_ident;
+///
+/// // Expands to the identifier: life_fsm
+/// enum_module_ident!(LifeFSM);
+///
+/// // Can be used with stringify! to get the string representation
+/// let module_name = stringify!(enum_module_ident!(PlayerState));
+/// assert_eq!(module_name, "player_state");
+/// ```
+///
+/// # Use Cases
+///
+/// This macro is primarily useful for library authors building on top of `bevy_enum_events`,
+/// such as:
+/// - The `bevy_fsm` crate, which needs to reference generated module names
+/// - Code generation tools that work with `EnumEvents`
+/// - Macros that compose with `EnumEvents`
+///
+/// Most users won't need this macro directly, as they can reference the generated modules
+/// by their `snake_case` names directly (e.g., `player_state::Idle`).
+#[proc_macro]
+pub fn enum_module_ident(input: TokenStream) -> TokenStream {
+    let ident = parse_macro_input!(input as syn::Ident);
+    let module_name_str = to_snake_case(&ident.to_string());
+    let module_ident = syn::Ident::new(&module_name_str, ident.span());
+
+    TokenStream::from(quote! { #module_ident })
+}
+
+/// # Panics
+///
+/// Panics if applied to a non-enum type (struct, union, etc.).
 #[proc_macro_derive(EnumEvents)]
 pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
