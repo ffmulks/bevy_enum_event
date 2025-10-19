@@ -135,29 +135,9 @@ name = "bevy_enum_event"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_fsm",
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "bevy_enum_event"
-version = "0.1.0"
-source = "git+https://github.com/ffmulks/bevy_enum_event?branch=main#19e1fdca5219f2d285a771578b0fff9317106fe9"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "bevy_fsm"
-version = "0.1.0"
-source = "git+https://github.com/ffmulks/bevy_fsm?branch=main#8160108456b100ffb1a8ad632eb4f8db9c2d1286"
-dependencies = [
- "bevy",
- "bevy_enum_event 0.1.0 (git+https://github.com/ffmulks/bevy_enum_event?branch=main)",
 ]
 
 [[package]]

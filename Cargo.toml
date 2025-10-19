@@ -16,13 +16,11 @@ proc-macro = true
 [features]
 default = ["deref"]
 deref = []
-fsm = ["bevy_fsm"]
 
 [dependencies]
 syn = { version = "2.0.107", features = ["full", "visit"] }
 quote = "1.0"
 proc-macro2 = "1.0"
-bevy_fsm = { git = "https://github.com/ffmulks/bevy_fsm", branch = "main", optional = true }
 
 [dev-dependencies]
 bevy = { version = "0.16", default-features = false }
