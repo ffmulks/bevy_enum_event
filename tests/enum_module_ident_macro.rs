@@ -61,9 +61,9 @@ fn test_macro_generates_correct_modules() {
 
 #[test]
 fn test_module_names_match() {
-    use test_enum::Foo;
-    use life_fsm::Born;
     use http_server::Started;
+    use life_fsm::Born;
+    use test_enum::Foo;
 
     // Verify that the modules EnumEvent generates match what enum_module_ident! would produce
     // (by virtue of them both using the same to_snake_case function)

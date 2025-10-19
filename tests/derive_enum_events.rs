@@ -159,6 +159,42 @@ fn test_multi_field_variants() {
     assert_eq!(m2.b, 42);
 }
 
+// Test deref support for multi-field variants when #[enum_event(deref)] is provided
+#[cfg(feature = "deref")]
+#[test]
+fn test_multi_field_deref_with_attribute() {
+    #[derive(EnumEvent, Clone)]
+    #[allow(dead_code)]
+    enum MultiFieldDeref {
+        Tuple(#[enum_event(deref)] String, i32),
+        Named {
+            #[enum_event(deref)]
+            value: String,
+            other: i32,
+        },
+    }
+
+    let mut tuple = multi_field_deref::Tuple("tuple".to_string(), 7);
+    let tuple_ref: &String = &tuple;
+    assert_eq!(tuple_ref, "tuple");
+
+    let tuple_ref_mut: &mut String = &mut tuple;
+    tuple_ref_mut.push_str("_updated");
+    assert_eq!(tuple.0, "tuple_updated");
+
+    let mut named = multi_field_deref::Named {
+        value: "named".to_string(),
+        other: 9,
+    };
+    let named_ref: &String = &named;
+    assert_eq!(named_ref, "named");
+
+    let named_ref_mut: &mut String = &mut named;
+    named_ref_mut.push_str("_updated");
+    assert_eq!(named.value, "named_updated");
+    assert_eq!(named.other, 9);
+}
+
 // Test Clone trait
 #[test]
 fn test_clone() {
@@ -185,4 +221,44 @@ fn test_debug() {
     let val = debug_enum::Value("test".to_string());
     let debug_str = format!("{val:?}");
     assert!(debug_str.contains("Value"));
+}
+
+#[test]
+fn test_generic_enum_support() {
+    #[derive(EnumEvent, Clone, Debug)]
+    #[allow(dead_code)]
+    enum GenericEnum<T>
+    where
+        T: Clone + std::fmt::Debug,
+    {
+        Owned(T),
+        Pair(T, u32),
+        Unit,
+    }
+
+    let value = String::from("hello");
+    let owned = generic_enum::Owned(value.clone());
+    assert_eq!(owned.0, value);
+
+    let pair = generic_enum::Pair(value.clone(), 7);
+    assert_eq!(pair.0, value);
+    assert_eq!(pair.1, 7);
+
+    let _unit = generic_enum::Unit::<String>::default();
+
+    #[derive(EnumEvent, Clone, Copy, Debug)]
+    #[allow(dead_code)]
+    enum BorrowedEnum<'a> {
+        Reference(&'a i32),
+        Unit,
+    }
+
+    let data = 42;
+    let reference = borrowed_enum::Reference(&data);
+    #[cfg(feature = "deref")]
+    assert_eq!(**reference, 42);
+    #[cfg(not(feature = "deref"))]
+    assert_eq!(*reference.0, 42);
+
+    let _borrowed_unit = borrowed_enum::Unit::default();
 }

@@ -20,8 +20,9 @@ General-purpose enum to Bevy event conversion macro.
 - **Snake case module**: `PlayerState` → `player_state` module
 - **Zero boilerplate**: No manual event struct definitions needed
 - **Type-safe**: Each variant gets its own distinct event type
+- **Generic-friendly**: Works with lifetimes, generic parameters, and `where` clauses
 - **Bevy integration**: Generated events work seamlessly with Bevy's observer system
-- **Deref support** (optional): Automatic `Deref` and `DerefMut` for single-field variants
+- **Deref support** (optional): Automatic `Deref` and `DerefMut` for single-field variants, or multi-field variants when you tag one field with `#[enum_event(deref)]`
 
 ## Installation
 
@@ -148,7 +149,7 @@ fn on_entity_spawned(trigger: Trigger<entity_event::Spawned>) {
 
 ## Feature: `deref` (enabled by default)
 
-The `deref` feature automatically implements `Deref` and `DerefMut` for enum variants with a single field (either tuple or named), allowing convenient access to the inner value.
+The `deref` feature automatically implements `Deref` and `DerefMut` for enum variants with a single field (either tuple or named). For multi-field variants, you can opt into the same ergonomic access by adding `#[enum_event(deref)]` to the field you want to expose (the generated struct receives Bevy's `#[deref]` attribute).
 
 ### Example
 
@@ -161,6 +162,7 @@ enum EntityEvent {
     Spawned(Entity),
     Destroyed(Entity),
     HealthChanged { value: f32 },
+    Scored { #[enum_event(deref)] player: Entity, points: u32 },
 }
 
 fn on_spawned(trigger: Trigger<entity_event::Spawned>) {
@@ -173,6 +175,12 @@ fn on_health_changed(trigger: Trigger<entity_event::HealthChanged>) {
     // Deref also works for named single-field variants
     let health: f32 = *trigger.event();
     println!("Health changed to: {}", health);
+}
+
+fn on_scored(trigger: Trigger<entity_event::Scored>) {
+    // Multi-field variants work when you mark one field with #[enum_event(deref)]
+    let player: Entity = *trigger.event();
+    println!("Player {player:?} scored!");
 }
 ```
 
@@ -202,6 +210,44 @@ The macro intelligently converts enum names to snake_case module names:
 - `PlayerState` → `player_state`
 - `HTTPServer` → `http_server`
 - `MyHTTPSConnection` → `my_https_connection`
+
+## Generics & Lifetimes
+
+All derives mirror the generic parameters, lifetimes, and `where` clauses from your enum onto the generated
+event structs and trait implementations. This makes it straightforward to use `EnumEvent`, `FSMTransition`, and
+`FSMState` with enums such as:
+
+```rust
+#[derive(EnumEvent, Clone)]
+enum GenericEvent<'a, T>
+where
+    T: Clone + 'a,
+{
+    Borrowed(&'a T),
+    Owned(T),
+    Done,
+}
+```
+
+The generated module exposes `generic_event::Borrowed<'a, T>`, `generic_event::Owned<'a, T>`, and
+`generic_event::Done<'a, T>` types with identical bounds.
+
+Unit event structs expose ergonomic constructors so you never have to juggle hidden `PhantomData`
+markers by hand. Every unit variant implements `Default`, and when a phantom marker is required the
+derive also emits a `new()` helper that seeds it for you. Tuple and named variants that require
+phantom markers likewise receive `new(...)` helpers that accept only the original fields.
+
+> **Note:** Rust does not permit unused type parameters on unit enums, so `FSMState` is limited to
+> enums whose generic parameters show up in the variant list (or to const generics). When you need
+> generic data alongside state machines, prefer encoding the data on the transition events (which
+> fully support generics).
+
+## Feature: `fsm`
+
+Enable the `fsm` feature to activate the optional [`bevy_fsm`](https://crates.io/crates/bevy_fsm) integration.
+The dependency is pulled in automatically, so you only need to opt into the feature.
+
+This unlocks the `FSMTransition` and `FSMState` derives, which also respect generics or `where` clauses declared on your enum.
 
 ## Advanced: `enum_module_ident!` Macro
 
@@ -256,3 +302,4 @@ at your option.
 ### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+

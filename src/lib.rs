@@ -70,10 +70,12 @@
 //! # Feature: `deref` (enabled by default)
 //!
 //! When the `deref` feature is enabled (which it is by default), enum variants with a single
-//! field or tuple value will automatically derive `Deref` and `DerefMut`, allowing direct access
-//! to the inner value:
+//! field automatically derive `Deref` and `DerefMut`. Multi-field variants can opt into the same
+//! behavior by marking one field with `#[enum_event(deref)]`, allowing direct access to that inner value:
 //!
-#![cfg_attr(feature = "deref", doc = r#"
+#![cfg_attr(
+    feature = "deref",
+    doc = r#"
 ```
 use bevy_enum_event::EnumEvent;
 use std::ops::Deref;
@@ -82,14 +84,20 @@ use std::ops::Deref;
 enum NetworkEvent {
     MessageReceived(String),
     Disconnected,
+    PlayerScored { #[enum_event(deref)] player: u32, points: u32 },
 }
 
 // Test that deref works
 let msg = network_event::MessageReceived("Hello".to_string());
 let content: &String = msg.deref();
 assert_eq!(content, "Hello");
+
+let scored = network_event::PlayerScored { player: 7, points: 120 };
+let player: &u32 = scored.deref();
+assert_eq!(*player, 7);
 ```
-"#)]
+"#
+)]
 //!
 //!
 //! To disable this feature, add the following to your `Cargo.toml`:
@@ -135,7 +143,8 @@ assert_eq!(content, "Hello");
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use std::collections::HashSet;
+use syn::{parse_macro_input, visit::Visit, Attribute, Data, DeriveInput, Fields};
 
 /// Converts `PascalCase` or `camelCase` to `snake_case`.
 ///
@@ -163,6 +172,89 @@ fn to_snake_case(s: &str) -> String {
         }
     }
     result
+}
+
+struct GenericsUsageCollector<'a> {
+    type_names: &'a [String],
+    lifetime_names: &'a [String],
+    pub used_types: HashSet<String>,
+    pub used_lifetimes: HashSet<String>,
+}
+
+impl<'a> GenericsUsageCollector<'a> {
+    fn new(type_names: &'a [String], lifetime_names: &'a [String]) -> Self {
+        Self {
+            type_names,
+            lifetime_names,
+            used_types: HashSet::new(),
+            used_lifetimes: HashSet::new(),
+        }
+    }
+}
+
+impl<'a, 'ast> Visit<'ast> for GenericsUsageCollector<'a> {
+    fn visit_type_path(&mut self, type_path: &'ast syn::TypePath) {
+        if type_path.qself.is_none() {
+            if let Some(ident) = type_path.path.get_ident() {
+                let ident_str = ident.to_string();
+                if self.type_names.iter().any(|name| name == &ident_str) {
+                    self.used_types.insert(ident_str);
+                }
+            }
+        }
+        syn::visit::visit_type_path(self, type_path);
+    }
+
+    fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+        let ident_str = lifetime.ident.to_string();
+        if self.lifetime_names.iter().any(|name| name == &ident_str) {
+            self.used_lifetimes.insert(ident_str);
+        }
+        syn::visit::visit_lifetime(self, lifetime);
+    }
+}
+
+fn path_ends_with_ident(path: &syn::Path, ident: &str) -> bool {
+    path.segments
+        .last()
+        .map(|segment| segment.ident == ident)
+        .unwrap_or(false)
+}
+
+#[derive(Default)]
+struct FieldAttrInfo {
+    passthrough_attrs: Vec<Attribute>,
+    has_deref: bool,
+    has_deref_mut: bool,
+}
+
+fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
+    let mut info = FieldAttrInfo::default();
+
+    for attr in attrs {
+        if path_ends_with_ident(attr.path(), "enum_event") {
+            if let Err(err) = attr.parse_nested_meta(|meta| {
+                if path_ends_with_ident(&meta.path, "deref") {
+                    info.has_deref = true;
+                } else if path_ends_with_ident(&meta.path, "deref_mut") {
+                    info.has_deref_mut = true;
+                    info.has_deref = true;
+                }
+                Ok(())
+            }) {
+                panic!("EnumEvent: failed to parse #[enum_event(...)] attribute: {err}");
+            }
+        } else if path_ends_with_ident(attr.path(), "deref") {
+            info.has_deref = true;
+        } else if path_ends_with_ident(attr.path(), "deref_mut") {
+            info.has_deref_mut = true;
+            info.has_deref = true;
+        } else {
+            info.passthrough_attrs.push(attr.clone());
+        }
+    }
+
+    info
 }
 
 /// Derive macro that generates Bevy event types from enum variants.
@@ -262,7 +354,7 @@ pub fn enum_module_ident(input: TokenStream) -> TokenStream {
 /// # Panics
 ///
 /// Panics if applied to a non-enum type (struct, union, etc.).
-#[proc_macro_derive(EnumEvent)]
+#[proc_macro_derive(EnumEvent, attributes(enum_event, deref, deref_mut))]
 pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_name = &input.ident;
@@ -277,114 +369,339 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     let module_name_str = to_snake_case(&enum_name.to_string());
     let module_name = syn::Ident::new(&module_name_str, enum_name.span());
 
-    // Generate struct definitions for each variant
-    let struct_defs: Vec<_> = variants
+    let generics = input.generics.clone();
+    let struct_generics = if generics.params.is_empty() {
+        quote! {}
+    } else {
+        let params = generics.params.iter();
+        quote! { <#(#params),*> }
+    };
+    let where_clause = generics.where_clause.as_ref();
+    let type_params: Vec<(String, syn::Ident)> = generics
+        .type_params()
+        .map(|param| (param.ident.to_string(), param.ident.clone()))
+        .collect();
+    let lifetime_params: Vec<(String, syn::Lifetime)> = generics
+        .lifetimes()
+        .map(|param| {
+            let lt = param.lifetime.clone();
+            (lt.ident.to_string(), lt)
+        })
+        .collect();
+    let type_param_names: Vec<String> = type_params.iter().map(|(name, _)| name.clone()).collect();
+    let lifetime_param_names: Vec<String> = lifetime_params
         .iter()
-        .map(|variant| {
-            let variant_ident = &variant.ident;
+        .map(|(name, _)| name.clone())
+        .collect();
 
-            match &variant.fields {
-                Fields::Unit => {
-                    // Unit variant: generate a unit struct
+    // Generate struct definitions for each variant
+    let mut struct_defs = Vec::new();
+    let mut additional_impls = Vec::new();
+    let mut uses_deref_derives = false;
+
+    for variant in variants {
+        let variant_ident = &variant.ident;
+        let struct_generics_tokens = struct_generics.clone();
+
+        let mut usage_collector =
+            GenericsUsageCollector::new(&type_param_names, &lifetime_param_names);
+        for field in variant.fields.iter() {
+            usage_collector.visit_type(&field.ty);
+        }
+        let unused_type_params: Vec<_> = type_params
+            .iter()
+            .filter(|(name, _)| !usage_collector.used_types.contains(name))
+            .map(|(_, ident)| ident.clone())
+            .collect();
+        let unused_lifetimes: Vec<_> = lifetime_params
+            .iter()
+            .filter(|(name, _)| !usage_collector.used_lifetimes.contains(name))
+            .map(|(_, lifetime)| lifetime.clone())
+            .collect();
+        let phantom_entries: Vec<_> = unused_type_params
+            .iter()
+            .map(|ident| quote! { #ident })
+            .chain(unused_lifetimes.iter().map(|lt| {
+                quote! { &#lt () }
+            }))
+            .collect();
+        let phantom_type = if phantom_entries.is_empty() {
+            None
+        } else {
+            Some(quote! { ::core::marker::PhantomData<(#(#phantom_entries ,)*)> })
+        };
+        let mut extra_impl = None;
+
+        let struct_def = match &variant.fields {
+            Fields::Unit => {
+                if let Some(phantom_type) = phantom_type.clone() {
+                    let (impl_generics_impl, ty_generics_impl, where_clause_impl) =
+                        generics.split_for_impl();
+                    extra_impl = Some(quote! {
+                        impl #impl_generics_impl #variant_ident #ty_generics_impl #where_clause_impl {
+                            #[inline]
+                            pub const fn new() -> Self {
+                                Self {
+                                    _phantom: ::core::marker::PhantomData,
+                                }
+                            }
+                        }
+                    });
                     quote! {
                         /// Event type corresponding to the enum variant.
-                        #[derive(Event, Clone, Copy, Debug)]
-                        pub struct #variant_ident;
-                    }
-                }
-                Fields::Unnamed(fields) => {
-                    // Tuple variant: generate a tuple struct
-                    let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
-                    let is_single_field = field_types.len() == 1;
-
-                    if is_single_field && cfg!(feature = "deref") {
-                        // Single field with deref feature: add Deref and DerefMut
-                        let field_type = &field_types[0];
-                        quote! {
-                            /// Event type corresponding to the enum variant.
-                            #[derive(Event, Clone, Debug)]
-                            pub struct #variant_ident(pub #field_type);
-
-                            #[cfg(feature = "deref")]
-                            impl ::core::ops::Deref for #variant_ident {
-                                type Target = #field_type;
-
-                                fn deref(&self) -> &Self::Target {
-                                    &self.0
-                                }
-                            }
-
-                            #[cfg(feature = "deref")]
-                            impl ::core::ops::DerefMut for #variant_ident {
-                                fn deref_mut(&mut self) -> &mut Self::Target {
-                                    &mut self.0
-                                }
-                            }
-                        }
-                    } else {
-                        // Multiple fields or deref disabled: just the struct
-                        quote! {
-                            /// Event type corresponding to the enum variant.
-                            #[derive(Event, Clone, Debug)]
-                            pub struct #variant_ident(#(pub #field_types),*);
+                        #[allow(unused_lifetimes, unused_type_parameters)]
+                        #[derive(Event, Clone, Copy, Debug, Default)]
+                        pub struct #variant_ident #struct_generics_tokens #where_clause {
+                            #[doc(hidden)]
+                            pub(crate) _phantom: #phantom_type,
                         }
                     }
+                } else {
+                    quote! {
+                        /// Event type corresponding to the enum variant.
+                        #[allow(unused_lifetimes, unused_type_parameters)]
+                        #[derive(Event, Clone, Copy, Debug, Default)]
+                        pub struct #variant_ident #struct_generics_tokens #where_clause;
+                    }
                 }
-                Fields::Named(fields) => {
-                    // Named fields variant: generate a struct with named fields
-                    let field_defs: Vec<_> = fields.named.iter().collect();
-                    let is_single_field = field_defs.len() == 1;
+            }
+            Fields::Unnamed(fields) => {
+                let struct_generics_tokens = struct_generics_tokens.clone();
+                let field_infos: Vec<_> = fields
+                    .unnamed
+                    .iter()
+                    .map(|field| {
+                        let info = analyze_field_attrs(&field.attrs);
+                        (info, &field.ty)
+                    })
+                    .collect();
+                let field_count = field_infos.len();
+                let deref_attr_fields = field_infos
+                    .iter()
+                    .filter(|(info, _)| info.has_deref)
+                    .count();
 
-                    if is_single_field && cfg!(feature = "deref") {
-                        // Single field with deref feature: add Deref and DerefMut
-                        let field = &field_defs[0];
-                        let field_name = field.ident.as_ref().unwrap();
-                        let field_type = &field.ty;
+                if field_count > 1 && deref_attr_fields > 1 {
+                    panic!(
+                        "EnumEvent: variant `{}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced",
+                        variant_ident
+                    );
+                }
+
+                let should_derive_deref =
+                    cfg!(feature = "deref") && (field_count == 1 || deref_attr_fields == 1);
+
+                let mut field_tokens: Vec<_> = field_infos
+                    .iter()
+                    .map(|(info, ty)| {
+                        let passthrough_attrs = info.passthrough_attrs.iter();
+                        let mut marker_attrs = Vec::new();
+
+                        if should_derive_deref {
+                            if info.has_deref {
+                                marker_attrs.push(quote!(#[deref]));
+                            }
+                            if info.has_deref_mut {
+                                marker_attrs.push(quote!(#[deref_mut]));
+                            }
+                        }
 
                         quote! {
-                            /// Event type corresponding to the enum variant.
-                            #[derive(Event, Clone, Debug)]
-                            pub struct #variant_ident {
-                                pub #field_name: #field_type,
+                            #(#passthrough_attrs)*
+                            #(#marker_attrs)*
+                            pub #ty
+                        }
+                    })
+                    .collect();
+
+                if let Some(phantom_type) = phantom_type.clone() {
+                    field_tokens.push(quote! {
+                        #[doc(hidden)]
+                        pub(crate) #phantom_type
+                    });
+
+                    let (impl_generics_impl, ty_generics_impl, where_clause_impl) =
+                        generics.split_for_impl();
+                    let arg_idents: Vec<_> = (0..field_infos.len())
+                        .map(|index| {
+                            syn::Ident::new(&format!("__arg{index}"), variant_ident.span())
+                        })
+                        .collect();
+                    let arg_defs: Vec<_> = field_infos
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, (_, ty))| {
+                            let ident = &arg_idents[idx];
+                            quote! { #ident: #ty }
+                        })
+                        .collect();
+                    let arg_values = arg_idents.iter();
+
+                    extra_impl = Some(quote! {
+                        impl #impl_generics_impl #variant_ident #ty_generics_impl #where_clause_impl {
+                            #[inline]
+                            pub fn new(#(#arg_defs),*) -> Self {
+                                Self(#(#arg_values),*, ::core::marker::PhantomData)
                             }
+                        }
+                    });
+                }
 
-                            #[cfg(feature = "deref")]
-                            impl ::core::ops::Deref for #variant_ident {
-                                type Target = #field_type;
+                if should_derive_deref {
+                    uses_deref_derives = true;
+                    quote! {
+                        /// Event type corresponding to the enum variant.
+                        #[allow(unused_lifetimes, unused_type_parameters)]
+                        #[derive(Event, Deref, DerefMut, Clone, Debug)]
+                        pub struct #variant_ident #struct_generics_tokens(#(#field_tokens),*) #where_clause;
+                    }
+                } else {
+                    quote! {
+                        /// Event type corresponding to the enum variant.
+                        #[allow(unused_lifetimes, unused_type_parameters)]
+                        #[derive(Event, Clone, Debug)]
+                        pub struct #variant_ident #struct_generics_tokens(#(#field_tokens),*) #where_clause;
+                    }
+                }
+            }
+            Fields::Named(fields) => {
+                let struct_generics_tokens = struct_generics_tokens.clone();
+                let field_infos: Vec<_> = fields
+                    .named
+                    .iter()
+                    .map(|field| {
+                        let info = analyze_field_attrs(&field.attrs);
+                        let field_name = field
+                            .ident
+                            .as_ref()
+                            .expect("Named fields must have identifiers")
+                            .clone();
+                        (info, field_name, &field.ty)
+                    })
+                    .collect();
+                let field_count = field_infos.len();
+                let deref_attr_fields = field_infos
+                    .iter()
+                    .filter(|(info, _, _)| info.has_deref)
+                    .count();
 
-                                fn deref(&self) -> &Self::Target {
-                                    &self.#field_name
-                                }
+                if field_count > 1 && deref_attr_fields > 1 {
+                    panic!(
+                        "EnumEvent: variant `{}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced",
+                        variant_ident
+                    );
+                }
+
+                let should_derive_deref =
+                    cfg!(feature = "deref") && (field_count == 1 || deref_attr_fields == 1);
+
+                let auto_mark_single_field =
+                    should_derive_deref && deref_attr_fields == 0 && field_count == 1;
+
+                let mut field_tokens: Vec<_> = field_infos
+                    .iter()
+                    .map(|(info, field_name, field_type)| {
+                        let passthrough_attrs = info.passthrough_attrs.iter();
+                        let mut marker_attrs = Vec::new();
+
+                        if should_derive_deref {
+                            if info.has_deref {
+                                marker_attrs.push(quote!(#[deref]));
                             }
+                            if info.has_deref_mut {
+                                marker_attrs.push(quote!(#[deref_mut]));
+                            } else if auto_mark_single_field {
+                                marker_attrs.push(quote!(#[deref]));
+                            }
+                        } else if auto_mark_single_field {
+                            marker_attrs.push(quote!(#[deref]));
+                        }
 
-                            #[cfg(feature = "deref")]
-                            impl ::core::ops::DerefMut for #variant_ident {
-                                fn deref_mut(&mut self) -> &mut Self::Target {
-                                    &mut self.#field_name
+                        quote! {
+                            #(#passthrough_attrs)*
+                            #(#marker_attrs)*
+                            pub #field_name: #field_type,
+                        }
+                    })
+                    .collect();
+
+                if let Some(phantom_type) = phantom_type.clone() {
+                    field_tokens.push(quote! {
+                        #[doc(hidden)]
+                        pub(crate) _phantom: #phantom_type,
+                    });
+
+                    let (impl_generics_impl, ty_generics_impl, where_clause_impl) =
+                        generics.split_for_impl();
+                    let arg_defs: Vec<_> = field_infos
+                        .iter()
+                        .map(|(_, field_name, field_type)| {
+                            quote! { #field_name: #field_type }
+                        })
+                        .collect();
+                    let field_names: Vec<_> = field_infos
+                        .iter()
+                        .map(|(_, field_name, _)| field_name)
+                        .collect();
+
+                    extra_impl = Some(quote! {
+                        impl #impl_generics_impl #variant_ident #ty_generics_impl #where_clause_impl {
+                            #[inline]
+                            pub fn new(#(#arg_defs),*) -> Self {
+                                Self {
+                                    #(#field_names),*,
+                                    _phantom: ::core::marker::PhantomData,
                                 }
                             }
                         }
-                    } else {
-                        // Multiple fields or deref disabled: just the struct
-                        quote! {
-                            /// Event type corresponding to the enum variant.
-                            #[derive(Event, Clone, Debug)]
-                            pub struct #variant_ident {
-                                #(pub #field_defs),*
-                            }
+                    });
+                }
+
+                if should_derive_deref {
+                    uses_deref_derives = true;
+                    quote! {
+                        /// Event type corresponding to the enum variant.
+                        #[allow(unused_lifetimes, unused_type_parameters)]
+                        #[derive(Event, Deref, DerefMut, Clone, Debug)]
+                        pub struct #variant_ident #struct_generics_tokens #where_clause {
+                            #(#field_tokens)*
+                        }
+                    }
+                } else {
+                    quote! {
+                        /// Event type corresponding to the enum variant.
+                        #[allow(unused_lifetimes, unused_type_parameters)]
+                        #[derive(Event, Clone, Debug)]
+                        pub struct #variant_ident #struct_generics_tokens #where_clause {
+                            #(#field_tokens)*
                         }
                     }
                 }
             }
-        })
-        .collect();
+        };
+
+        struct_defs.push(struct_def);
+        if let Some(extra) = extra_impl {
+            additional_impls.push(extra);
+        }
+    }
+
+    let deref_imports = if cfg!(feature = "deref") && uses_deref_derives {
+        quote! {
+            use bevy::prelude::{Deref, DerefMut};
+        }
+    } else {
+        quote! {}
+    };
 
     let expanded = quote! {
         /// Generated module containing event types for each enum variant.
         pub mod #module_name {
             use bevy::prelude::Event;
+            #deref_imports
 
             #(#struct_defs)*
+            #(#additional_impls)*
         }
     };
 
@@ -456,6 +773,8 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 pub fn derive_fsm_transition(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_name = &input.ident;
+    let generics = input.generics.clone();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     // Verify it's an enum (though not strictly necessary for FSMTransition)
     if !matches!(&input.data, Data::Enum(_)) {
@@ -463,7 +782,7 @@ pub fn derive_fsm_transition(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl bevy_fsm::FSMTransition for #enum_name {
+        impl #impl_generics bevy_fsm::FSMTransition for #enum_name #ty_generics #where_clause {
             /// Default implementation: allows all transitions.
             ///
             /// This is auto-generated by `#[derive(FSMTransition)]`.
@@ -560,6 +879,13 @@ pub fn derive_fsm_transition(input: TokenStream) -> TokenStream {
 pub fn derive_derive_fsm_state(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_name = &input.ident;
+    let generics = input.generics.clone();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let turbofish = if generics.params.is_empty() {
+        quote! {}
+    } else {
+        quote! { ::#ty_generics }
+    };
 
     // Extract variants from enum
     let variants = match &input.data {
@@ -581,36 +907,54 @@ pub fn derive_derive_fsm_state(input: TokenStream) -> TokenStream {
     let fsm_module_name = syn::Ident::new(&module_name_str, enum_name.span());
 
     // Generate Enter event triggers for each variant
-    let enter_triggers: Vec<_> = variant_idents.iter().map(|variant| {
-        quote! {
-            #enum_name::#variant => {
-                ec.trigger(bevy_fsm::Enter::<#fsm_module_name::#variant> {
-                    state: #fsm_module_name::#variant,
-                });
+    let enter_triggers: Vec<_> = variant_idents
+        .iter()
+        .map(|variant| {
+            let turbofish = turbofish.clone();
+            let variant_ty = quote! { #fsm_module_name::#variant #ty_generics };
+            let variant_value = quote! { #fsm_module_name::#variant #turbofish::default() };
+            quote! {
+                #enum_name::#variant => {
+                    ec.trigger(bevy_fsm::Enter::<#variant_ty> {
+                        state: #variant_value,
+                    });
+                }
             }
-        }
-    }).collect();
+        })
+        .collect();
 
     // Generate Exit event triggers for each variant
-    let exit_triggers: Vec<_> = variant_idents.iter().map(|variant| {
-        quote! {
-            #enum_name::#variant => {
-                ec.trigger(bevy_fsm::Exit::<#fsm_module_name::#variant> {
-                    state: #fsm_module_name::#variant,
-                });
+    let exit_triggers: Vec<_> = variant_idents
+        .iter()
+        .map(|variant| {
+            let turbofish = turbofish.clone();
+            let variant_ty = quote! { #fsm_module_name::#variant #ty_generics };
+            let variant_value = quote! { #fsm_module_name::#variant #turbofish::default() };
+            quote! {
+                #enum_name::#variant => {
+                    ec.trigger(bevy_fsm::Exit::<#variant_ty> {
+                        state: #variant_value,
+                    });
+                }
             }
-        }
-    }).collect();
+        })
+        .collect();
 
     // Generate all pairs of transition types (N × N combinations)
     let mut transition_triggers = Vec::new();
     for from_variant in &variant_idents {
         for to_variant in &variant_idents {
+            let turbofish_from = turbofish.clone();
+            let turbofish_to = turbofish.clone();
+            let from_ty = quote! { #fsm_module_name::#from_variant #ty_generics };
+            let to_ty = quote! { #fsm_module_name::#to_variant #ty_generics };
+            let from_value = quote! { #fsm_module_name::#from_variant #turbofish_from::default() };
+            let to_value = quote! { #fsm_module_name::#to_variant #turbofish_to::default() };
             transition_triggers.push(quote! {
                 (#enum_name::#from_variant, #enum_name::#to_variant) => {
-                    ec.trigger(bevy_fsm::Transition::<#fsm_module_name::#from_variant, #fsm_module_name::#to_variant> {
-                        from: #fsm_module_name::#from_variant,
-                        to: #fsm_module_name::#to_variant,
+                    ec.trigger(bevy_fsm::Transition::<#from_ty, #to_ty> {
+                        from: #from_value,
+                        to: #to_value,
                     });
                 }
             });
@@ -619,7 +963,7 @@ pub fn derive_derive_fsm_state(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         // Implement the FSMState trait methods
-        impl bevy_fsm::FSMState for #enum_name {
+        impl #impl_generics bevy_fsm::FSMState for #enum_name #ty_generics #where_clause {
             /// Triggers variant-specific Enter event.
             ///
             /// This method is generated by `#[derive(FSMState)]` and is used internally

@@ -48,14 +48,20 @@ fn main() {
     let idle = player_state::Idle;
     let running = player_state::Running;
     println!("  Created states: {idle:?} and {running:?}");
-    println!("  Size of unit variant: {} bytes\n", std::mem::size_of_val(&idle));
+    println!(
+        "  Size of unit variant: {} bytes\n",
+        std::mem::size_of_val(&idle)
+    );
 
     // Working with mixed variants
     println!("2. Mixed Variants (GameEvent):");
     let victory = game_event::Victory("Team Red".to_string());
     println!("  Victory event: {}", victory.0);
 
-    let score = game_event::ScoreChanged { team: 1, score: 100 };
+    let score = game_event::ScoreChanged {
+        team: 1,
+        score: 100,
+    };
     println!("  Score event: Team {} scored {}", score.team, score.score);
 
     let game_over = game_event::GameOver;
@@ -84,9 +90,18 @@ fn main() {
     // Demonstrate enum_module_ident! macro
     println!("\n4. Using enum_module_ident! macro:");
     println!("  The enum_module_ident! macro converts enum names to module identifiers.");
-    println!("  PlayerState → {}", stringify!(enum_module_ident!(PlayerState)));
-    println!("  GameEvent → {}", stringify!(enum_module_ident!(GameEvent)));
-    println!("  NetworkEvent → {}", stringify!(enum_module_ident!(NetworkEvent)));
+    println!(
+        "  PlayerState → {}",
+        stringify!(enum_module_ident!(PlayerState))
+    );
+    println!(
+        "  GameEvent → {}",
+        stringify!(enum_module_ident!(GameEvent))
+    );
+    println!(
+        "  NetworkEvent → {}",
+        stringify!(enum_module_ident!(NetworkEvent))
+    );
 
     // This is particularly useful for library authors who need to programmatically
     // reference the generated module names in their own macros or code generation.
