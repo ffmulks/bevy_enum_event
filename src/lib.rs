@@ -7,9 +7,9 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_enum_events::EnumEvents;
+//! use bevy_enum_event::EnumEvent;
 //!
-//! #[derive(EnumEvents, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+//! #[derive(EnumEvent, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 //! enum PlayerState {
 //!     Idle,
 //!     Running,
@@ -37,9 +37,9 @@
 //! # Example (Variants with Data)
 //!
 //! ```
-//! use bevy_enum_events::EnumEvents;
+//! use bevy_enum_event::EnumEvent;
 //!
-//! #[derive(EnumEvents, Clone)]
+//! #[derive(EnumEvent, Clone)]
 //! enum GameEvent {
 //!     Victory(String),
 //!     ScoreChanged { team: u32, score: i32 },
@@ -75,10 +75,10 @@
 //!
 #![cfg_attr(feature = "deref", doc = r#"
 ```
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 use std::ops::Deref;
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 enum NetworkEvent {
     MessageReceived(String),
     Disconnected,
@@ -96,16 +96,16 @@ assert_eq!(content, "Hello");
 //!
 //! ```toml
 //! [dependencies]
-//! bevy_enum_events = { version = "0.1", default-features = false }
+//! bevy_enum_event = { version = "0.1", default-features = false }
 //! ```
 //!
 //! # Usage with Observers
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_enum_events::EnumEvents;
+//! use bevy_enum_event::EnumEvent;
 //!
-//! #[derive(EnumEvents, Clone, Copy)]
+//! #[derive(EnumEvent, Clone, Copy)]
 //! enum GameState {
 //!     MainMenu,
 //!     Playing,
@@ -120,10 +120,10 @@ assert_eq!(content, "Hello");
 //! # Helper Macro: `enum_module_ident!`
 //!
 //! For advanced use cases (like building wrapper crates), the `enum_module_ident!` macro
-//! provides access to the module name that `EnumEvents` would generate.
+//! provides access to the module name that `EnumEvent` would generate.
 //!
 //! ```ignore
-//! use bevy_enum_events::enum_module_ident;
+//! use bevy_enum_event::enum_module_ident;
 //!
 //! // This expands to the identifier: life_fsm
 //! let module_name = stringify!(enum_module_ident!(LifeFSM));
@@ -201,9 +201,9 @@ fn to_snake_case(s: &str) -> String {
 /// # Example
 ///
 /// ```rust,no_run
-/// use bevy_enum_events::EnumEvents;
+/// use bevy_enum_event::EnumEvent;
 ///
-/// #[derive(EnumEvents)]
+/// #[derive(EnumEvent)]
 /// enum Action {
 ///     Jump,
 ///     Run(f32),  // speed
@@ -224,13 +224,13 @@ fn to_snake_case(s: &str) -> String {
 /// implement `Deref` and `DerefMut` for convenient access to the inner value.
 /// Procedural macro that converts a type identifier to its `snake_case` module identifier.
 ///
-/// This generates the same module name that `EnumEvents` would create, allowing
+/// This generates the same module name that `EnumEvent` would create, allowing
 /// programmatic access to generated module names in consuming crates.
 ///
 /// # Example
 ///
 /// ```ignore
-/// use bevy_enum_events::enum_module_ident;
+/// use bevy_enum_event::enum_module_ident;
 ///
 /// // Expands to the identifier: life_fsm
 /// enum_module_ident!(LifeFSM);
@@ -242,11 +242,11 @@ fn to_snake_case(s: &str) -> String {
 ///
 /// # Use Cases
 ///
-/// This macro is primarily useful for library authors building on top of `bevy_enum_events`,
+/// This macro is primarily useful for library authors building on top of `bevy_enum_event`,
 /// such as:
 /// - The `bevy_fsm` crate, which needs to reference generated module names
-/// - Code generation tools that work with `EnumEvents`
-/// - Macros that compose with `EnumEvents`
+/// - Code generation tools that work with `EnumEvent`
+/// - Macros that compose with `EnumEvent`
 ///
 /// Most users won't need this macro directly, as they can reference the generated modules
 /// by their `snake_case` names directly (e.g., `player_state::Idle`).
@@ -262,7 +262,7 @@ pub fn enum_module_ident(input: TokenStream) -> TokenStream {
 /// # Panics
 ///
 /// Panics if applied to a non-enum type (struct, union, etc.).
-#[proc_macro_derive(EnumEvents)]
+#[proc_macro_derive(EnumEvent)]
 pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_name = &input.ident;
@@ -270,7 +270,7 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     // Extract variants from enum
     let variants = match &input.data {
         Data::Enum(data_enum) => &data_enum.variants,
-        _ => panic!("EnumEvents can only be derived for enums"),
+        _ => panic!("EnumEvent can only be derived for enums"),
     };
 
     // Convert EnumName to snake_case for module name
@@ -385,6 +385,270 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
             use bevy::prelude::Event;
 
             #(#struct_defs)*
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Derive macro for generating a default FSMTransition implementation (requires `fsm` feature).
+///
+/// This macro generates a permissive `FSMTransition` implementation that allows all state
+/// transitions. Use this for simple state machines where any transition should be allowed.
+///
+/// # Requirements
+///
+/// - Can be applied to any enum (doesn't require `EnumEvent` or `FSMState`)
+/// - Requires `fsm` feature to be enabled
+/// - Depends on `bevy_fsm::FSMTransition` trait
+///
+/// # Generated Code
+///
+/// Generates an implementation of `FSMTransition` with `can_transition` always returning `true`.
+///
+/// # Example (Zero Boilerplate)
+///
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use bevy_enum_event::{EnumEvent, FSMTransition, FSMState};
+///
+/// #[derive(Component, EnumEvent, FSMTransition, FSMState, Clone, Copy, Debug)]
+/// enum GameState {
+///     MainMenu,
+///     Playing,
+///     GameOver,
+/// }
+///
+/// // All transitions are allowed automatically!
+/// // MainMenu -> Playing ✅
+/// // Playing -> GameOver ✅
+/// // GameOver -> MainMenu ✅
+/// ```
+///
+/// # Example (Custom Rules - Don't Derive)
+///
+/// If you need custom transition logic, don't derive `FSMTransition`:
+///
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use bevy_enum_event::{EnumEvent, FSMState};
+/// use bevy_fsm::FSMTransition;
+///
+/// // No FSMTransition derive here!
+/// #[derive(Component, EnumEvent, FSMState, Clone, Copy, Debug)]
+/// enum LifeFSM {
+///     Alive,
+///     Dying,
+///     Dead,
+/// }
+///
+/// // Manually implement for custom rules
+/// impl FSMTransition for LifeFSM {
+///     fn can_transition(from: Self, to: Self) -> bool {
+///         matches!((from, to),
+///             (LifeFSM::Alive, LifeFSM::Dying) |
+///             (LifeFSM::Dying, LifeFSM::Dead)) || from == to
+///     }
+/// }
+/// ```
+#[cfg(feature = "fsm")]
+#[proc_macro_derive(FSMTransition)]
+pub fn derive_fsm_transition(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let enum_name = &input.ident;
+
+    // Verify it's an enum (though not strictly necessary for FSMTransition)
+    if !matches!(&input.data, Data::Enum(_)) {
+        panic!("FSMTransition can only be derived for enums");
+    }
+
+    let expanded = quote! {
+        impl bevy_fsm::FSMTransition for #enum_name {
+            /// Default implementation: allows all transitions.
+            ///
+            /// This is auto-generated by `#[derive(FSMTransition)]`.
+            fn can_transition(_from: Self, _to: Self) -> bool {
+                true
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Derive macro for generating FSM state infrastructure (requires `fsm` feature).
+///
+/// This macro extends `EnumEvent` with finite state machine functionality by implementing
+/// both the `FSMTransition` trait (with a default "allow all" implementation) and the
+/// `FSMState` trait (with variant-specific event triggering). It must be used alongside
+/// `#[derive(EnumEvent)]`.
+///
+/// # Requirements
+///
+/// - Must be applied to the same enum as `#[derive(EnumEvent)]`
+/// - The enum must only have unit variants (no tuple or named fields)
+/// - Requires `fsm` feature to be enabled
+/// - Depends on types from `bevy_fsm` crate: `Enter<T>`, `Exit<T>`, `Transition<F, T>`, `FSMTransition`, `FSMState`
+///
+/// # Generated Code
+///
+/// For an enum named `MyFSM`, this generates:
+///
+/// 1. **FSMTransition implementation** (default: allows all transitions)
+/// 2. **FSMState implementation** with three methods:
+///    - `trigger_enter_variant(ec, state)` - Fires `Enter<module::Variant>` events
+///    - `trigger_exit_variant(ec, state)` - Fires `Exit<module::Variant>` events
+///    - `trigger_transition_variant(ec, from, to)` - Fires `Transition<module::From, module::To>` events
+///
+/// # Example (Zero Boilerplate - All Transitions Allowed)
+///
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use bevy_enum_event::{EnumEvent, FSMState};
+///
+/// // Just two derives - no FSMTransition implementation needed!
+/// #[derive(Component, EnumEvent, FSMState, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// enum GameState {
+///     MainMenu,
+///     Playing,
+///     GameOver,
+/// }
+///
+/// // All transitions are allowed by default
+/// // MainMenu -> Playing ✅
+/// // Playing -> GameOver ✅
+/// // GameOver -> MainMenu ✅ (even backwards transitions work!)
+/// ```
+///
+/// # Example (Custom Transition Rules)
+///
+/// Override the default `FSMTransition` implementation to add custom rules:
+///
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use bevy_enum_event::{EnumEvent, FSMState};
+/// use bevy_fsm::FSMTransition;
+///
+/// #[derive(Component, EnumEvent, FSMState, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// enum LifeFSM {
+///     Alive,
+///     Dying,
+///     Dead,
+/// }
+///
+/// // Override the default to add custom transition rules
+/// impl FSMTransition for LifeFSM {
+///     fn can_transition(from: Self, to: Self) -> bool {
+///         matches!((from, to),
+///             (LifeFSM::Alive, LifeFSM::Dying) |
+///             (LifeFSM::Dying, LifeFSM::Dead)) || from == to
+///     }
+/// }
+///
+/// // Now transitions are restricted:
+/// // Alive -> Dying ✅
+/// // Dying -> Dead ✅
+/// // Dead -> Alive ❌ (blocked by custom rules)
+/// ```
+///
+/// # Panics
+///
+/// - Panics if applied to a non-enum type
+/// - Panics if any variant has fields (only unit variants are supported for FSM)
+#[cfg(feature = "fsm")]
+#[proc_macro_derive(FSMState)]
+pub fn derive_derive_fsm_state(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let enum_name = &input.ident;
+
+    // Extract variants from enum
+    let variants = match &input.data {
+        Data::Enum(data_enum) => &data_enum.variants,
+        _ => panic!("FSMState can only be derived for enums"),
+    };
+
+    // Verify all variants are unit variants
+    for variant in variants {
+        if !matches!(variant.fields, Fields::Unit) {
+            panic!("FSMState enum variants must be unit variants (no fields). Variant '{}' has fields.", variant.ident);
+        }
+    }
+
+    let variant_idents: Vec<_> = variants.iter().map(|v| &v.ident).collect();
+
+    // Generate the module name (same as EnumEvent uses)
+    let module_name_str = to_snake_case(&enum_name.to_string());
+    let fsm_module_name = syn::Ident::new(&module_name_str, enum_name.span());
+
+    // Generate Enter event triggers for each variant
+    let enter_triggers: Vec<_> = variant_idents.iter().map(|variant| {
+        quote! {
+            #enum_name::#variant => {
+                ec.trigger(bevy_fsm::Enter::<#fsm_module_name::#variant> {
+                    state: #fsm_module_name::#variant,
+                });
+            }
+        }
+    }).collect();
+
+    // Generate Exit event triggers for each variant
+    let exit_triggers: Vec<_> = variant_idents.iter().map(|variant| {
+        quote! {
+            #enum_name::#variant => {
+                ec.trigger(bevy_fsm::Exit::<#fsm_module_name::#variant> {
+                    state: #fsm_module_name::#variant,
+                });
+            }
+        }
+    }).collect();
+
+    // Generate all pairs of transition types (N × N combinations)
+    let mut transition_triggers = Vec::new();
+    for from_variant in &variant_idents {
+        for to_variant in &variant_idents {
+            transition_triggers.push(quote! {
+                (#enum_name::#from_variant, #enum_name::#to_variant) => {
+                    ec.trigger(bevy_fsm::Transition::<#fsm_module_name::#from_variant, #fsm_module_name::#to_variant> {
+                        from: #fsm_module_name::#from_variant,
+                        to: #fsm_module_name::#to_variant,
+                    });
+                }
+            });
+        }
+    }
+
+    let expanded = quote! {
+        // Implement the FSMState trait methods
+        impl bevy_fsm::FSMState for #enum_name {
+            /// Triggers variant-specific Enter event.
+            ///
+            /// This method is generated by `#[derive(FSMState)]` and is used internally
+            /// by the bevy_fsm framework to fire Enter events for specific state variants.
+            fn trigger_enter_variant(ec: &mut bevy::prelude::EntityCommands, state: Self) {
+                match state {
+                    #(#enter_triggers)*
+                }
+            }
+
+            /// Triggers variant-specific Exit event.
+            ///
+            /// This method is generated by `#[derive(FSMState)]` and is used internally
+            /// by the bevy_fsm framework to fire Exit events for specific state variants.
+            fn trigger_exit_variant(ec: &mut bevy::prelude::EntityCommands, state: Self) {
+                match state {
+                    #(#exit_triggers)*
+                }
+            }
+
+            /// Triggers variant-specific Transition event.
+            ///
+            /// This method is generated by `#[derive(FSMState)]` and is used internally
+            /// by the bevy_fsm framework to fire Transition events between specific state variants.
+            fn trigger_transition_variant(ec: &mut bevy::prelude::EntityCommands, from: Self, to: Self) {
+                match (from, to) {
+                    #(#transition_triggers)*
+                }
+            }
         }
     };
 

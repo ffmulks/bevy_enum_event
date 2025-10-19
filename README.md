@@ -1,10 +1,10 @@
-# bevy_enum_events
+# bevy_enum_event
 
 General-purpose enum to Bevy event conversion macro.
 
 ## Overview
 
-`bevy_enum_events` provides a derive macro that automatically generates Bevy event types from enum variants. For each variant in your enum, it creates a corresponding event struct organized in a snake_case module. Supports unit variants, tuple variants, and named field variants.
+`bevy_enum_event` provides a derive macro that automatically generates Bevy event types from enum variants. For each variant in your enum, it creates a corresponding event struct organized in a snake_case module. Supports unit variants, tuple variants, and named field variants.
 
 ## Bevy Compatibility
 
@@ -27,7 +27,7 @@ General-purpose enum to Bevy event conversion macro.
 
 ```toml
 [dependencies]
-bevy_enum_events = "0.1"
+bevy_enum_event = "0.1"
 ```
 
 ## Quick Start
@@ -36,9 +36,9 @@ bevy_enum_events = "0.1"
 
 ```rust
 use bevy::prelude::*;
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 
-#[derive(EnumEvents, Clone, Copy, Debug)]
+#[derive(EnumEvent, Clone, Copy, Debug)]
 enum PlayerState {
     Idle,
     Running,
@@ -67,9 +67,9 @@ pub mod player_state {
 
 ```rust
 use bevy::prelude::*;
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 enum GameEvent {
     PlayerSpawned(Entity),
     ScoreChanged { player: Entity, score: i32 },
@@ -103,9 +103,9 @@ pub mod game_event {
 
 ```rust
 use bevy::prelude::*;
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 
-#[derive(EnumEvents, Clone, Copy)]
+#[derive(EnumEvent, Clone, Copy)]
 enum GameState {
     MainMenu,
     Playing,
@@ -125,9 +125,9 @@ fn on_paused(trigger: Trigger<game_state::Paused>) {
 
 ```rust
 use bevy::prelude::*;
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 enum EntityEvent {
     Spawned(Entity),
     Damaged { entity: Entity, amount: f32 },
@@ -154,9 +154,9 @@ The `deref` feature automatically implements `Deref` and `DerefMut` for enum var
 
 ```rust
 use bevy::prelude::*;
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 enum EntityEvent {
     Spawned(Entity),
     Destroyed(Entity),
@@ -182,7 +182,7 @@ If you prefer not to have `Deref` and `DerefMut` automatically implemented, you 
 
 ```toml
 [dependencies]
-bevy_enum_events = { version = "0.1", default-features = false }
+bevy_enum_event = { version = "0.1", default-features = false }
 ```
 
 When disabled, you'll need to access fields directly:
@@ -205,10 +205,10 @@ The macro intelligently converts enum names to snake_case module names:
 
 ## Advanced: `enum_module_ident!` Macro
 
-For library authors building on top of `bevy_enum_events`, the `enum_module_ident!` macro provides programmatic access to the generated module names:
+For library authors building on top of `bevy_enum_event`, the `enum_module_ident!` macro provides programmatic access to the generated module names:
 
 ```rust
-use bevy_enum_events::enum_module_ident;
+use bevy_enum_event::enum_module_ident;
 
 // Expands to the identifier: life_fsm
 enum_module_ident!(LifeFSM);
@@ -222,8 +222,8 @@ assert_eq!(module_name, "player_state");
 
 This macro is particularly useful for:
 - Libraries like [`bevy_fsm`](https://crates.io/crates/bevy_fsm) that need to reference generated module names
-- Code generation tools that work with `EnumEvents`
-- Macros that compose with `EnumEvents`
+- Code generation tools that work with `EnumEvent`
+- Macros that compose with `EnumEvent`
 
 Most users won't need this macro directly, as they can reference the generated modules by their snake_case names (e.g., `player_state::Idle`).
 

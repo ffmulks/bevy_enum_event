@@ -1,4 +1,4 @@
-//! Basic example demonstrating the different types of enum variants supported by `bevy_enum_events`.
+//! Basic example demonstrating the different types of enum variants supported by `bevy_enum_event`.
 //!
 //! This example shows:
 //! - Unit variants (no data)
@@ -9,10 +9,10 @@
 //! - Using the `enum_module_ident!` macro to get module names
 
 #[allow(unused_imports)]
-use bevy_enum_events::{enum_module_ident, EnumEvents};
+use bevy_enum_event::{enum_module_ident, EnumEvent};
 
 // Example 1: Unit variants only (e.g., simple state machine)
-#[derive(EnumEvents, Clone, Copy, Debug)]
+#[derive(EnumEvent, Clone, Copy, Debug)]
 #[allow(dead_code)]
 enum PlayerState {
     Idle,
@@ -21,7 +21,7 @@ enum PlayerState {
 }
 
 // Example 2: Mixed variants with data (realistic game events)
-#[derive(EnumEvents, Clone, Debug)]
+#[derive(EnumEvent, Clone, Debug)]
 #[allow(dead_code)]
 enum GameEvent {
     /// A player wins with their team name
@@ -33,7 +33,7 @@ enum GameEvent {
 }
 
 // Example 3: Single-field variants (benefit from deref feature)
-#[derive(EnumEvents, Clone, Debug)]
+#[derive(EnumEvent, Clone, Debug)]
 #[allow(dead_code)]
 enum NetworkEvent {
     MessageReceived(String),
@@ -41,7 +41,7 @@ enum NetworkEvent {
 }
 
 fn main() {
-    println!("=== bevy_enum_events Basic Example ===\n");
+    println!("=== bevy_enum_event Basic Example ===\n");
 
     // Working with unit variants
     println!("1. Unit Variants (PlayerState):");
@@ -90,5 +90,5 @@ fn main() {
 
     // This is particularly useful for library authors who need to programmatically
     // reference the generated module names in their own macros or code generation.
-    println!("\n  This macro is useful for library authors building on bevy_enum_events.");
+    println!("\n  This macro is useful for library authors building on bevy_enum_event.");
 }

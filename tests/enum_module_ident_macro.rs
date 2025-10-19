@@ -12,16 +12,16 @@
 // }
 // ```
 
-use bevy_enum_events::EnumEvents;
+use bevy_enum_event::EnumEvent;
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 #[allow(dead_code)]
 enum TestEnum {
     Foo,
     Bar,
 }
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 #[allow(dead_code)]
 enum LifeFSM {
     Born,
@@ -29,7 +29,7 @@ enum LifeFSM {
     Dead,
 }
 
-#[derive(EnumEvents, Clone)]
+#[derive(EnumEvent, Clone)]
 #[allow(dead_code)]
 enum HTTPServer {
     Started,
@@ -65,7 +65,7 @@ fn test_module_names_match() {
     use life_fsm::Born;
     use http_server::Started;
 
-    // Verify that the modules EnumEvents generates match what enum_module_ident! would produce
+    // Verify that the modules EnumEvent generates match what enum_module_ident! would produce
     // (by virtue of them both using the same to_snake_case function)
 
     // If enum_module_ident!(TestEnum) didn't expand to test_enum, this wouldn't compile

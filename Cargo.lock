@@ -131,7 +131,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_enum_events"
+name = "bevy_enum_event"
 version = "0.1.0"
 dependencies = [
  "bevy",
