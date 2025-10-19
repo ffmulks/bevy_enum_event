@@ -214,8 +214,7 @@ The macro intelligently converts enum names to snake_case module names:
 ## Generics & Lifetimes
 
 All derives mirror the generic parameters, lifetimes, and `where` clauses from your enum onto the generated
-event structs and trait implementations. This makes it straightforward to use `EnumEvent`, `FSMTransition`, and
-`FSMState` with enums such as:
+event structs. This makes it straightforward to use `EnumEvent` with enums such as:
 
 ```rust
 #[derive(EnumEvent, Clone)]
@@ -236,42 +235,6 @@ Unit event structs expose ergonomic constructors so you never have to juggle hid
 markers by hand. Every unit variant implements `Default`, and when a phantom marker is required the
 derive also emits a `new()` helper that seeds it for you. Tuple and named variants that require
 phantom markers likewise receive `new(...)` helpers that accept only the original fields.
-
-> **Note:** Rust does not permit unused type parameters on unit enums, so `FSMState` is limited to
-> enums whose generic parameters show up in the variant list (or to const generics). When you need
-> generic data alongside state machines, prefer encoding the data on the transition events (which
-> fully support generics).
-
-## Feature: `fsm`
-
-Enable the `fsm` feature to activate the optional [`bevy_fsm`](https://crates.io/crates/bevy_fsm) integration.
-The dependency is pulled in automatically, so you only need to opt into the feature.
-
-This unlocks the `FSMTransition` and `FSMState` derives, which also respect generics or `where` clauses declared on your enum.
-
-## Advanced: `enum_module_ident!` Macro
-
-For library authors building on top of `bevy_enum_event`, the `enum_module_ident!` macro provides programmatic access to the generated module names:
-
-```rust
-use bevy_enum_event::enum_module_ident;
-
-// Expands to the identifier: life_fsm
-enum_module_ident!(LifeFSM);
-
-// Can be used with stringify! to get the string representation
-let module_name = stringify!(enum_module_ident!(PlayerState));
-assert_eq!(module_name, "player_state");
-```
-
-### Use Cases
-
-This macro is particularly useful for:
-- Libraries like [`bevy_fsm`](https://crates.io/crates/bevy_fsm) that need to reference generated module names
-- Code generation tools that work with `EnumEvent`
-- Macros that compose with `EnumEvent`
-
-Most users won't need this macro directly, as they can reference the generated modules by their snake_case names (e.g., `player_state::Idle`).
 
 ## Use Cases
 

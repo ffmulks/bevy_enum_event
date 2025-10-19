@@ -6,10 +6,8 @@
 //! - Named field variants
 //! - Mixed variants in a single enum
 //! - Deref behavior for single-field variants
-//! - Using the `enum_module_ident!` macro to get module names
 
-#[allow(unused_imports)]
-use bevy_enum_event::{enum_module_ident, EnumEvent};
+use bevy_enum_event::EnumEvent;
 
 // Example 1: Unit variants only (e.g., simple state machine)
 #[derive(EnumEvent, Clone, Copy, Debug)]
@@ -86,24 +84,6 @@ fn main() {
     }
 
     println!("\nAll event types work seamlessly with Bevy's event system!");
-
-    // Demonstrate enum_module_ident! macro
-    println!("\n4. Using enum_module_ident! macro:");
-    println!("  The enum_module_ident! macro converts enum names to module identifiers.");
-    println!(
-        "  PlayerState → {}",
-        stringify!(enum_module_ident!(PlayerState))
-    );
-    println!(
-        "  GameEvent → {}",
-        stringify!(enum_module_ident!(GameEvent))
-    );
-    println!(
-        "  NetworkEvent → {}",
-        stringify!(enum_module_ident!(NetworkEvent))
-    );
-
-    // This is particularly useful for library authors who need to programmatically
-    // reference the generated module names in their own macros or code generation.
-    println!("\n  This macro is useful for library authors building on bevy_enum_event.");
+    println!("\nLibrary authors extending bevy_enum_event can use the same");
+    println!("snake_case conversion logic (PascalCase → snake_case) in their own macros.");
 }
