@@ -3,6 +3,24 @@
 //! This crate provides derive macros that generate Bevy event types from enum variants.
 //! For each variant, it creates a corresponding event struct in a `snake_case` module.
 //!
+//! # Quick Start
+//!
+//! ```rust
+//! use bevy::prelude::*;
+//! use bevy_enum_event::EnumEvent;
+//!
+//! #[derive(EnumEvent, Clone, Copy)]
+//! enum GameState {
+//!     MainMenu,
+//!     Playing,
+//!     Paused,
+//! }
+//!
+//! fn on_paused(paused: On<game_state::Paused>) {
+//!     println!("Game paused!");
+//! }
+//! ```
+//!
 //! # Event Types
 //!
 //! Bevy 0.17 introduced two distinct event types:
@@ -12,8 +30,8 @@
 //!
 //! This crate provides corresponding derive macros:
 //!
-//! - `#[derive(EnumEvent)]` - Generates `Event` types
-//! - `#[derive(EnumEntityEvent)]` - Generates `EntityEvent` types
+//! - `#[derive(EnumEvent)]` - Generates `Event` types (see examples below)
+//! - `#[derive(EnumEntityEvent)]` - Generates `EntityEvent` types (see [EnumEntityEvent examples](#enumentityevent))
 //!
 //! # Example: `EnumEvent` (Unit Variants)
 //!
@@ -79,13 +97,13 @@
 //! }
 //! ```
 //!
-//! # Feature: `deref` (enabled by default)
+//! # Deref Feature (enabled by default)
 //!
-//! When the `deref` feature is enabled (which it is by default), enum variants with a single
-//! field automatically derive Bevy's `Deref` and `DerefMut` traits, providing ergonomic access to
-//! the inner value. Multi-field variants can opt into the same behavior by marking one field with
-//! `#[enum_event(deref)]`. If a multi-field variant is not annotated with `#[enum_event(deref)]`,
-//! no deref functionality is generated and fields must be accessed directly by name:
+//! The `deref` feature provides ergonomic access to event data:
+//!
+//! - **Single-field variants**: Automatically implement `Deref`/`DerefMut` to the inner value
+//! - **Multi-field variants**: Mark one field with `#[enum_event(deref)]` for deref access
+//! - **No annotation**: Access fields directly by name
 //!
 #![cfg_attr(
     feature = "deref",
@@ -96,23 +114,22 @@ use std::ops::Deref;
 
 #[derive(EnumEvent, Clone)]
 enum NetworkEvent {
-    MessageReceived(String),
-    Disconnected,
-    PlayerScored { #[enum_event(deref)] player: u32, points: u32 },
-    TeamScore { team: u32, points: u32 },  // No deref annotation
+    MessageReceived(String),  // Single field - automatic deref
+    PlayerScored { #[enum_event(deref)] player: u32, points: u32 },  // Multi-field with deref
+    TeamScore { team: u32, points: u32 },  // No deref - access fields directly
 }
 
-// Single-field variants automatically get deref
+// Single-field variant - automatic deref
 let msg = network_event::MessageReceived("Hello".to_string());
 let content: &String = msg.deref();
 assert_eq!(content, "Hello");
 
-// Multi-field with #[enum_event(deref)] annotation
+// Multi-field with #[enum_event(deref)] - deref to the marked field
 let scored = network_event::PlayerScored { player: 7, points: 120 };
 let player: &u32 = scored.deref();
 assert_eq!(*player, 7);
 
-// Multi-field without deref annotation - must access fields directly
+// No deref annotation - access fields directly
 let team_score = network_event::TeamScore { team: 1, points: 50 };
 assert_eq!(team_score.team, 1);
 assert_eq!(team_score.points, 50);
@@ -120,8 +137,7 @@ assert_eq!(team_score.points, 50);
 "#
 )]
 //!
-//!
-//! To disable this feature, add the following to your `Cargo.toml`:
+//! Disable the feature in `Cargo.toml`:
 //!
 //! ```toml
 //! [dependencies]
@@ -146,12 +162,18 @@ assert_eq!(team_score.points, 50);
 //! }
 //! ```
 //!
-//! # `EntityEvent` Features
+//! # EntityEvent Features
+//!
+//! ## Requirements
+//!
+//! - **Named fields only**: All variants must use `{ field: Type }` syntax
+//! - **Entity field**: Each variant needs an `entity: Entity` field or a field marked `#[enum_event(target)]`
+//! - **Triggering**: Use `commands.trigger(event)` or `world.trigger(event)`
 //!
 //! ## Custom Target Field
 //!
-//! By default, `EnumEntityEvent` uses a field named `entity` as the event target.
-//! You can specify a different field using `#[enum_event(target)]`:
+//! By default, `EnumEntityEvent` looks for a field named `entity`.
+//! Use `#[enum_event(target)]` to specify a different field:
 //!
 //! ```rust
 //! use bevy::prelude::*;
@@ -169,18 +191,24 @@ assert_eq!(team_score.points, 50);
 //!
 //! ## Event Propagation
 //!
-//! Enable event propagation up the entity hierarchy using `#[enum_event(propagate)]`.
-//! You can optionally specify a custom relationship type:
+//! Enable event propagation to bubble events up entity hierarchies:
 //!
 //! ```rust
 //! use bevy::prelude::*;
 //! use bevy_enum_event::EnumEntityEvent;
 //!
-//! // Default propagation (uses ChildOf relationship)
+//! // Default propagation (uses ChildOf)
 //! #[derive(EnumEntityEvent, Clone, Copy)]
 //! #[enum_event(propagate)]
-//! enum ClickEvent {
+//! enum UiEvent {
 //!     Click { entity: Entity },
+//! }
+//!
+//! // Auto propagation (always bubbles up)
+//! #[derive(EnumEntityEvent, Clone, Copy)]
+//! #[enum_event(auto_propagate, propagate)]
+//! enum SystemEvent {
+//!     Update { entity: Entity },
 //! }
 //!
 //! // Custom relationship type
@@ -191,23 +219,8 @@ assert_eq!(team_score.points, 50);
 //! }
 //! ```
 //!
-//! # Usage with Observers
-//!
-//! ```rust
-//! use bevy::prelude::*;
-//! use bevy_enum_event::EnumEvent;
-//!
-//! #[derive(EnumEvent, Clone, Copy)]
-//! enum GameState {
-//!     MainMenu,
-//!     Playing,
-//!     Paused,
-//! }
-//!
-//! fn on_paused(paused: On<game_state::Paused>) {
-//!     println!("Game paused!");
-//! }
-//! ```
+//! **Note**: Custom relationship types must be `pub` or use absolute paths (`::bevy::`, `crate::`)
+//! because they're accessed from the generated module.
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -368,120 +381,65 @@ fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
     info
 }
 
-/// Derive macro that generates Bevy event types from enum variants.
+/// Derive macro that generates Bevy `Event` types from enum variants.
 ///
-/// # Requirements
-///
-/// - Can only be derived for enums
-/// - Supports unit variants, tuple variants, and named field variants
-///
-/// # Panics
-///
-/// Panics if applied to a non-enum type (struct, union, etc.)
-///
-/// # Generated Code
-///
-/// For an enum named `MyEnum` with various variant types, this macro generates:
-///
-/// ```rust
-/// pub mod my_enum {
-///     use bevy::prelude::Event;
-///
-///     #[derive(Event, Clone, Copy, Debug)]
-///     pub struct VariantA;
-///
-///     #[derive(Event, Clone, Debug)]
-///     pub struct VariantB(pub String);
-///
-///     #[derive(Event, Clone, Debug)]
-///     pub struct VariantC {
-///         pub field1: i32,
-///         pub field2: String,
-///     }
-/// }
-/// ```
+/// Generates a snake_case module containing one `Event` struct per enum variant.
+/// Supports unit, tuple, and named field variants.
 ///
 /// # Example
 ///
 /// ```rust
 /// use bevy_enum_event::EnumEvent;
 ///
-/// #[derive(EnumEvent)]
+/// #[derive(EnumEvent, Clone)]
 /// enum Action {
 ///     Jump,
-///     Run(f32),  // speed
+///     Run(f32),
 ///     Attack { damage: i32, critical: bool },
 /// }
+/// ```
 ///
-/// // Generated module:
-/// // pub mod action {
-/// //     pub struct Jump;
-/// //     pub struct Run(pub f32);
-/// //     pub struct Attack { pub damage: i32, pub critical: bool }
-/// // }
+/// Generates:
+///
+/// ```rust
+/// pub mod action {
+///     use bevy::prelude::Event;
+///
+///     #[derive(Event, Clone, Debug)]
+///     pub struct Jump;
+///
+///     #[derive(Event, Clone, Debug)]
+///     pub struct Run(pub f32);
+///
+///     #[derive(Event, Clone, Debug)]
+///     pub struct Attack {
+///         pub damage: i32,
+///         pub critical: bool,
+///     }
+/// }
 /// ```
 ///
 /// # Deref Feature
 ///
-/// When the `deref` feature is enabled (default), single-field variants automatically
-/// implement `Deref` and `DerefMut` for convenient access to the inner value.
+/// When enabled (default), single-field variants automatically implement `Deref`/`DerefMut`.
+/// For multi-field variants, mark one field with `#[enum_event(deref)]`.
 ///
 /// # Panics
 ///
-/// Panics if applied to a non-enum type (struct, union, etc.).
+/// Panics if applied to a non-enum type.
 #[proc_macro_derive(EnumEvent, attributes(enum_event, deref, deref_mut))]
 pub fn derive_enum_events(input: TokenStream) -> TokenStream {
     derive_enum_event_impl(input, false)
 }
 
-/// Derive macro that generates Bevy entity event types from enum variants.
+/// Derive macro that generates Bevy `EntityEvent` types from enum variants.
 ///
-/// This macro works like `EnumEvent`, but generates `EntityEvent` types instead of `Event` types.
-/// `EntityEvents` target specific entities and can trigger entity-specific observers.
+/// Like `EnumEvent`, but generates entity-targeted events that trigger entity-specific observers.
 ///
-/// # Entity Field
+/// # Requirements
 ///
-/// By default, the macro looks for a field named `entity` to use as the event target.
-/// You can override this by using the `#[enum_event(target)]` attribute on a different field.
-///
-/// # Propagation
-///
-/// Use `#[enum_event(propagate)]` on the enum to enable event propagation up the entity hierarchy.
-/// This changes the trigger type from `EntityTrigger` to `PropagateEntityTrigger`.
-///
-/// You can optionally specify a custom relationship type for propagation:
-/// `#[enum_event(propagate = &'static RelationshipType)]`
-///
-/// For automatic propagation (bubbling events up the hierarchy), use `auto_propagate`:
-/// `#[enum_event(auto_propagate, propagate = &'static RelationshipType)]`
-///
-/// ## Variant-Level Propagate
-///
-/// You can override enum-level propagation settings on individual variants by adding
-/// `#[enum_event(propagate)]` attributes to specific variants. This allows for fine-grained
-/// control over which variants propagate and how:
-///
-/// - **Enum-level only**: All variants inherit the same propagation settings
-/// - **Variant-level override**: Variants can override enum-level settings
-/// - **Mixed mode**: Some variants can have no propagation while others do
-///
-/// ```rust
-/// use bevy::prelude::*;
-/// use bevy_enum_event::EnumEntityEvent;
-///
-/// #[derive(EnumEntityEvent, Clone, Copy)]
-/// #[enum_event(propagate)]  // Default for all variants
-/// #[allow(dead_code)]
-/// enum MixedEvent {
-///     Normal { entity: Entity },  // Uses enum-level propagate
-///
-///     #[enum_event(auto_propagate, propagate)]  // Overrides with auto_propagate
-///     AutoEvent { entity: Entity },
-///
-///     #[enum_event(propagate = &'static ::bevy::prelude::ChildOf)]  // Custom relationship
-///     CustomEvent { entity: Entity },
-/// }
-/// ```
+/// - **Named fields only**: All variants must use `{ field: Type }` syntax
+/// - **Entity field**: Must have `entity: Entity` or a field marked `#[enum_event(target)]`
 ///
 /// # Example
 ///
@@ -490,14 +448,13 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 /// use bevy_enum_event::EnumEntityEvent;
 ///
 /// #[derive(EnumEntityEvent, Clone, Copy)]
-/// enum EntityAction {
+/// enum PlayerEvent {
 ///     Spawned { entity: Entity },
 ///     Damaged { entity: Entity, amount: f32 },
-///     Destroyed { entity: Entity },
 /// }
 /// ```
 ///
-/// With custom target field:
+/// # Custom Target Field
 ///
 /// ```rust
 /// use bevy::prelude::*;
@@ -513,32 +470,56 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// With propagation:
+/// # Propagation
+///
+/// Enable event bubbling up entity hierarchies:
 ///
 /// ```rust
 /// use bevy::prelude::*;
 /// use bevy_enum_event::EnumEntityEvent;
 ///
+/// // Basic propagation (uses ChildOf)
 /// #[derive(EnumEntityEvent, Clone, Copy)]
 /// #[enum_event(propagate)]
-/// enum ClickEvent {
+/// enum UiEvent {
 ///     Click { entity: Entity },
+/// }
+///
+/// // Auto propagation (always bubbles)
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// #[enum_event(auto_propagate, propagate)]
+/// enum SystemEvent {
+///     Update { entity: Entity },
+/// }
+///
+/// // Custom relationship
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// #[enum_event(propagate = &'static ::bevy::prelude::ChildOf)]
+/// enum CustomEvent {
+///     Action { entity: Entity },
 /// }
 /// ```
 ///
-/// With custom propagation relationship:
+/// # Variant-Level Propagation
+///
+/// Override enum-level settings for specific variants:
 ///
 /// ```rust
 /// use bevy::prelude::*;
 /// use bevy_enum_event::EnumEntityEvent;
 ///
-/// // Using a custom relationship type (e.g., ChildOf for parent-child hierarchies)
 /// #[derive(EnumEntityEvent, Clone, Copy)]
-/// #[enum_event(propagate = &'static ::bevy::prelude::ChildOf)]
-/// enum HierarchyEvent {
-///     NodeChanged { entity: Entity },
+/// #[enum_event(propagate)]  // Default for all
+/// #[allow(dead_code)]
+/// enum MixedEvent {
+///     Normal { entity: Entity },  // Uses default
+///
+///     #[enum_event(auto_propagate, propagate)]  // Override
+///     AutoEvent { entity: Entity },
 /// }
 /// ```
+///
+/// **Note**: Custom relationships must be `pub` or use absolute paths (`::bevy::`, `crate::`).
 #[proc_macro_derive(
     EnumEntityEvent,
     attributes(enum_event, event_target, deref, deref_mut)
