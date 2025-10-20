@@ -1,4 +1,5 @@
-use bevy_enum_event::EnumEvent;
+use bevy::prelude::Entity;
+use bevy_enum_event::{EnumEntityEvent, EnumEvent};
 
 // Test unit variants
 #[derive(EnumEvent, Clone, Copy, Debug, PartialEq)]
@@ -248,8 +249,8 @@ fn test_generic_enum_support() {
 
     #[derive(EnumEvent, Clone, Copy, Debug)]
     #[allow(dead_code)]
-    enum BorrowedEnum<'a> {
-        Reference(&'a i32),
+    enum BorrowedEnum<'event> {
+        Reference(&'event i32),
         Unit,
     }
 
@@ -261,4 +262,167 @@ fn test_generic_enum_support() {
     assert_eq!(*reference.0, 42);
 
     let _borrowed_unit = borrowed_enum::Unit::default();
+}
+
+// ============================================================================
+// EntityEvent Tests
+// ============================================================================
+
+// Test basic EntityEvent with entity field
+#[test]
+fn test_entity_event_basic() {
+    #[derive(EnumEntityEvent, Clone, Copy)]
+    #[allow(dead_code)]
+    enum EntityAction {
+        Spawned { entity: Entity },
+        Destroyed { entity: Entity },
+    }
+
+    let entity = Entity::from_bits(42);
+    let spawned = entity_action::Spawned { entity };
+    assert_eq!(spawned.entity, entity);
+
+    let destroyed = entity_action::Destroyed { entity };
+    assert_eq!(destroyed.entity, entity);
+}
+
+// Test EntityEvent with additional fields
+#[test]
+fn test_entity_event_with_data() {
+    #[derive(EnumEntityEvent, Clone)]
+    #[allow(dead_code)]
+    enum CombatEvent {
+        Damaged { entity: Entity, amount: f32 },
+        Healed { entity: Entity, amount: f32 },
+    }
+
+    let entity = Entity::from_bits(7);
+    let damaged = combat_event::Damaged {
+        entity,
+        amount: 10.5,
+    };
+    assert_eq!(damaged.entity, entity);
+    assert_eq!(damaged.amount, 10.5);
+
+    let healed = combat_event::Healed {
+        entity,
+        amount: 5.0,
+    };
+    assert_eq!(healed.entity, entity);
+    assert_eq!(healed.amount, 5.0);
+}
+
+// Test EntityEvent with custom target field
+#[test]
+fn test_entity_event_custom_target() {
+    #[derive(EnumEntityEvent, Clone, Copy)]
+    #[allow(dead_code)]
+    enum AttackEvent {
+        Hit {
+            #[enum_event(target)]
+            attacker: Entity,
+            defender: Entity,
+        },
+    }
+
+    let attacker = Entity::from_bits(1);
+    let defender = Entity::from_bits(2);
+    let hit = attack_event::Hit { attacker, defender };
+    assert_eq!(hit.attacker, attacker);
+    assert_eq!(hit.defender, defender);
+}
+
+// Test EntityEvent with propagate
+#[test]
+fn test_entity_event_propagate() {
+    #[derive(EnumEntityEvent, Clone, Copy)]
+    #[enum_event(propagate)]
+    #[allow(dead_code)]
+    enum UiEvent {
+        Click { entity: Entity },
+        Hover { entity: Entity },
+    }
+
+    let entity = Entity::from_bits(10);
+    let click = ui_event::Click { entity };
+    assert_eq!(click.entity, entity);
+
+    let hover = ui_event::Hover { entity };
+    assert_eq!(hover.entity, entity);
+}
+
+// Test EntityEvent with custom propagate relationship
+// Note: This test just verifies the macro accepts the syntax and generates valid code
+// The actual propagate relationship would be used at runtime by Bevy's observer system
+#[test]
+fn test_entity_event_custom_propagate() {
+    use bevy::ecs::relationship;
+    use bevy::prelude::{Component, EntityEvent};
+
+    #[derive(Component)]
+    #[relationship(relationship_target = CustomRelationshipTarget)]
+    struct CustomRelationship(pub Entity);
+
+    #[derive(Component)]
+    #[relationship_target(relationship = CustomRelationship, linked_spawn)]
+    struct CustomRelationshipTarget(Vec<Entity>);
+
+    #[derive(EnumEntityEvent, Clone, Copy)]
+    #[enum_event(propagate = &'static CustomRelationship)]
+    #[allow(dead_code)]
+    enum HierarchyEvent {
+        NodeAdded { entity: Entity },
+        NodeRemoved { entity: Entity },
+    }
+
+    let entity = Entity::from_bits(20);
+    let added = hierarchy_event::NodeAdded { entity };
+    assert_eq!(added.entity, entity);
+
+    let removed = hierarchy_event::NodeRemoved { entity };
+    assert_eq!(removed.entity, entity);
+}
+
+// Test EntityEvent with deref on entity field
+#[cfg(feature = "deref")]
+#[test]
+fn test_entity_event_single_field_deref() {
+    #[derive(EnumEntityEvent, Clone, Copy)]
+    #[allow(dead_code)]
+    enum SingleFieldEntity {
+        Spawned { entity: Entity },
+    }
+
+    let entity = Entity::from_bits(99);
+    let spawned = single_field_entity::Spawned { entity };
+
+    // With single field, deref should work
+    let dereffed: &Entity = &spawned;
+    assert_eq!(*dereffed, entity);
+}
+
+// Test EntityEvent with deref on custom field
+#[cfg(feature = "deref")]
+#[test]
+fn test_entity_event_multi_field_deref() {
+    #[derive(EnumEntityEvent, Clone, Copy)]
+    #[allow(dead_code)]
+    enum MultiFieldEntity {
+        Scored {
+            #[enum_event(deref)]
+            entity: Entity,
+            points: u32,
+        },
+    }
+
+    let entity = Entity::from_bits(5);
+    let scored = multi_field_entity::Scored {
+        entity,
+        points: 100,
+    };
+
+    // Deref should give us the entity field
+    let dereffed: &Entity = &scored;
+    assert_eq!(*dereffed, entity);
+    assert_eq!(scored.points, 100);
 }

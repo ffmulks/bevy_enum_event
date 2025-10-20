@@ -1,9 +1,9 @@
 [package]
 name = "bevy_enum_event"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "General-purpose enum to Bevy event conversion macro - generates event types from enum variants with support for data-carrying variants"
+description = "General-purpose enum to Bevy event conversion macro - generates Event and EntityEvent types from enum variants with support for entity targeting and propagation"
 repository = "https://github.com/ffmulks/bevy_enum_event"
 authors = ["Dr. Florian Mulks <ff@mulks.ac>"]
 keywords = ["bevy", "enum", "events", "macro"]
@@ -23,4 +23,4 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 [dev-dependencies]
-bevy = { version = "0.16", default-features = false }
+bevy = { version = "0.17", default-features = false }

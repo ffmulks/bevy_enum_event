@@ -1,9 +1,21 @@
 //! General-purpose enum to Bevy event conversion macro.
 //!
-//! This crate provides a derive macro that generates Bevy event types from enum variants.
+//! This crate provides derive macros that generate Bevy event types from enum variants.
 //! For each variant, it creates a corresponding event struct in a `snake_case` module.
 //!
-//! # Example: Unit Variants
+//! # Event Types
+//!
+//! Bevy 0.17 introduced two distinct event types:
+//!
+//! - **`Event`**: Global events that are not associated with any specific entity
+//! - **`EntityEvent`**: Events that target a specific entity and trigger entity-specific observers
+//!
+//! This crate provides corresponding derive macros:
+//!
+//! - `#[derive(EnumEvent)]` - Generates `Event` types
+//! - `#[derive(EnumEntityEvent)]` - Generates `EntityEvent` types
+//!
+//! # Example: EnumEvent (Unit Variants)
 //!
 //! ```rust
 //! use bevy::prelude::*;
@@ -74,7 +86,7 @@
 //! the inner value. Multi-field variants can opt into the same behavior by marking one field with
 //! `#[enum_event(deref)]`. If a multi-field variant is not annotated with `#[enum_event(deref)]`,
 //! no deref functionality is generated and fields must be accessed directly by name:
-//! 
+//!
 #![cfg_attr(
     feature = "deref",
     doc = r#"
@@ -116,6 +128,70 @@ assert_eq!(team_score.points, 50);
 //! bevy_enum_event = { version = "0.1", default-features = false }
 //! ```
 //!
+//! # Example: EnumEntityEvent
+//!
+//! ```rust
+//! use bevy::prelude::*;
+//! use bevy_enum_event::EnumEntityEvent;
+//!
+//! #[derive(EnumEntityEvent, Clone, Copy)]
+//! enum PlayerEvent {
+//!     Spawned { entity: Entity },
+//!     Damaged { entity: Entity, amount: f32 },
+//!     Destroyed { entity: Entity },
+//! }
+//!
+//! fn on_player_damaged(damaged: On<player_event::Damaged>) {
+//!     println!("Player {:?} took {} damage", damaged.entity, damaged.amount);
+//! }
+//! ```
+//!
+//! # EntityEvent Features
+//!
+//! ## Custom Target Field
+//!
+//! By default, `EnumEntityEvent` uses a field named `entity` as the event target.
+//! You can specify a different field using `#[enum_event(target)]`:
+//!
+//! ```rust
+//! use bevy::prelude::*;
+//! use bevy_enum_event::EnumEntityEvent;
+//!
+//! #[derive(EnumEntityEvent, Clone, Copy)]
+//! enum CombatEvent {
+//!     Attack {
+//!         #[enum_event(target)]
+//!         attacker: Entity,
+//!         defender: Entity,
+//!     },
+//! }
+//! ```
+//!
+//! ## Event Propagation
+//!
+//! Enable event propagation up the entity hierarchy using `#[enum_event(propagate)]`.
+//! You can optionally specify a custom relationship type:
+//!
+//! ```rust
+//! use bevy::prelude::*;
+//! use bevy_enum_event::EnumEntityEvent;
+//!
+//! // Default propagation (uses ChildOf relationship)
+//! #[derive(EnumEntityEvent, Clone, Copy)]
+//! #[enum_event(propagate)]
+//! enum ClickEvent {
+//!     Click { entity: Entity },
+//! }
+//!
+//! // Custom relationship type
+//! # struct CustomRelationship;
+//! #[derive(EnumEntityEvent, Clone, Copy)]
+//! #[enum_event(propagate = &'static CustomRelationship)]
+//! enum CustomEvent {
+//!     Action { entity: Entity },
+//! }
+//! ```
+//!
 //! # Usage with Observers
 //!
 //! ```rust
@@ -129,7 +205,7 @@ assert_eq!(team_score.points, 50);
 //!     Paused,
 //! }
 //!
-//! fn on_paused(trigger: Trigger<game_state::Paused>) {
+//! fn on_paused(paused: On<game_state::Paused>) {
 //!     println!("Game paused!");
 //! }
 //! ```
@@ -219,6 +295,7 @@ struct FieldAttrInfo {
     passthrough_attrs: Vec<Attribute>,
     has_deref: bool,
     has_deref_mut: bool,
+    is_event_target: bool,
 }
 
 fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
@@ -232,11 +309,15 @@ fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
                 } else if path_ends_with_ident(&meta.path, "deref_mut") {
                     info.has_deref_mut = true;
                     info.has_deref = true;
+                } else if path_ends_with_ident(&meta.path, "target") {
+                    info.is_event_target = true;
                 }
                 Ok(())
             }) {
                 panic!("EnumEvent: failed to parse #[enum_event(...)] attribute: {err}");
             }
+        } else if path_ends_with_ident(attr.path(), "event_target") {
+            info.is_event_target = true;
         } else if path_ends_with_ident(attr.path(), "deref") {
             info.has_deref = true;
         } else if path_ends_with_ident(attr.path(), "deref_mut") {
@@ -313,8 +394,119 @@ fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
 /// Panics if applied to a non-enum type (struct, union, etc.).
 #[proc_macro_derive(EnumEvent, attributes(enum_event, deref, deref_mut))]
 pub fn derive_enum_events(input: TokenStream) -> TokenStream {
+    derive_enum_event_impl(input, false)
+}
+
+/// Derive macro that generates Bevy entity event types from enum variants.
+///
+/// This macro works like `EnumEvent`, but generates `EntityEvent` types instead of `Event` types.
+/// EntityEvents target specific entities and can trigger entity-specific observers.
+///
+/// # Entity Field
+///
+/// By default, the macro looks for a field named `entity` to use as the event target.
+/// You can override this by using the `#[enum_event(target)]` attribute on a different field.
+///
+/// # Propagation
+///
+/// Use `#[enum_event(propagate)]` on the enum to enable event propagation up the entity hierarchy.
+/// This changes the trigger type from `EntityTrigger` to `PropagateEntityTrigger`.
+///
+/// You can optionally specify a custom relationship type for propagation:
+/// `#[enum_event(propagate = &'static RelationshipType)]`
+///
+/// # Example
+///
+/// ```rust
+/// use bevy::prelude::*;
+/// use bevy_enum_event::EnumEntityEvent;
+///
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// enum EntityAction {
+///     Spawned { entity: Entity },
+///     Damaged { entity: Entity, amount: f32 },
+///     Destroyed { entity: Entity },
+/// }
+/// ```
+///
+/// With custom target field:
+///
+/// ```rust
+/// use bevy::prelude::*;
+/// use bevy_enum_event::EnumEntityEvent;
+///
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// enum CombatEvent {
+///     Attack {
+///         #[enum_event(target)]
+///         attacker: Entity,
+///         defender: Entity,
+///     },
+/// }
+/// ```
+///
+/// With propagation:
+///
+/// ```rust
+/// use bevy::prelude::*;
+/// use bevy_enum_event::EnumEntityEvent;
+///
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// #[enum_event(propagate)]
+/// enum ClickEvent {
+///     Click { entity: Entity },
+/// }
+/// ```
+///
+/// With custom propagation relationship:
+///
+/// ```rust
+/// use bevy::prelude::*;
+/// use bevy_enum_event::EnumEntityEvent;
+///
+/// // Using a custom relationship type (e.g., ChildOf for parent-child hierarchies)
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// #[enum_event(propagate = &'static bevy::hierarchy::ChildOf)]
+/// enum HierarchyEvent {
+///     NodeChanged { entity: Entity },
+/// }
+/// ```
+#[proc_macro_derive(
+    EnumEntityEvent,
+    attributes(enum_event, event_target, deref, deref_mut)
+)]
+pub fn derive_enum_entity_events(input: TokenStream) -> TokenStream {
+    derive_enum_event_impl(input, true)
+}
+
+fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_name = &input.ident;
+
+    // Check for propagate attribute on the enum
+    // Can be either #[enum_event(propagate)] or #[enum_event(propagate = &'static RelType)]
+    let mut propagate_value: Option<syn::Expr> = None;
+    for attr in &input.attrs {
+        if path_ends_with_ident(attr.path(), "enum_event") {
+            let _ = attr.parse_nested_meta(|meta| {
+                if path_ends_with_ident(&meta.path, "propagate") {
+                    if meta.input.peek(syn::Token![=]) {
+                        // Parse: propagate = <expr>
+                        let _eq: syn::Token![=] = meta.input.parse()?;
+                        let expr: syn::Expr = meta.input.parse()?;
+                        propagate_value = Some(expr);
+                    } else {
+                        // Just: propagate (no value, uses default)
+                        propagate_value = Some(syn::parse_quote!(()));
+                    }
+                    Ok(())
+                } else {
+                    Err(meta.error("unknown enum_event attribute"))
+                }
+            });
+        }
+    }
+    let has_propagate = propagate_value.is_some();
 
     // Extract variants from enum
     let variants = match &input.data {
@@ -389,8 +581,64 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
         };
         let mut extra_impl = None;
 
+        // For EntityEvent, check if the variant has an entity field
+        let has_entity_field = if is_entity_event {
+            match &variant.fields {
+                Fields::Named(fields) => {
+                    // Check for entity field or marked target field
+                    let target_fields: Vec<_> = fields
+                        .named
+                        .iter()
+                        .filter(|field| {
+                            let info = analyze_field_attrs(&field.attrs);
+                            info.is_event_target
+                                || field
+                                    .ident
+                                    .as_ref()
+                                    .map(|id| id == "entity")
+                                    .unwrap_or(false)
+                        })
+                        .collect();
+
+                    if target_fields.len() > 1 {
+                        panic!(
+                            "EnumEntityEvent: variant `{}` has multiple fields marked as event target; only one field can be the target",
+                            variant_ident
+                        );
+                    }
+
+                    !target_fields.is_empty()
+                }
+                Fields::Unnamed(_) => false,
+                Fields::Unit => false,
+            }
+        } else {
+            false
+        };
+
+        if is_entity_event && !has_entity_field {
+            panic!(
+                "EnumEntityEvent: variant `{}` must have an `entity: Entity` field or a field marked with #[enum_event(target)]",
+                variant_ident
+            );
+        }
+
+        let event_derive = if is_entity_event {
+            quote! { EntityEvent }
+        } else {
+            quote! { Event }
+        };
+
         let struct_def = match &variant.fields {
             Fields::Unit => {
+                // Unit variants cannot be EntityEvents
+                if is_entity_event {
+                    panic!(
+                        "EnumEntityEvent: variant `{}` is a unit variant; entity events must have at least an entity field",
+                        variant_ident
+                    );
+                }
+
                 if let Some(phantom_type) = phantom_type.clone() {
                     let (impl_generics_impl, ty_generics_impl, where_clause_impl) =
                         generics.split_for_impl();
@@ -423,6 +671,14 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
                 }
             }
             Fields::Unnamed(fields) => {
+                // Tuple variants cannot be EntityEvents
+                if is_entity_event {
+                    panic!(
+                        "EnumEntityEvent: variant `{}` is a tuple variant; entity events must use named fields with an `entity: Entity` field",
+                        variant_ident
+                    );
+                }
+
                 let struct_generics_tokens = struct_generics_tokens.clone();
                 let field_infos: Vec<_> = fields
                     .unnamed
@@ -561,6 +817,11 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
                         let passthrough_attrs = info.passthrough_attrs.iter();
                         let mut marker_attrs = Vec::new();
 
+                        // Add event_target attribute for EntityEvent
+                        if is_entity_event && (info.is_event_target || field_name == "entity") {
+                            marker_attrs.push(quote!(#[event_target]));
+                        }
+
                         if should_derive_deref {
                             if info.has_deref {
                                 marker_attrs.push(quote!(#[deref]));
@@ -614,12 +875,31 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
                     });
                 }
 
+                // Note: We accept #[enum_event(propagate)] on the enum, but generate #[entity_event(propagate)]
+                // on the struct because that's what Bevy's EntityEvent derive expects
+                let propagate_attr = if is_entity_event && has_propagate {
+                    if let Some(ref propagate_val) = propagate_value {
+                        // Check if it's the unit value (default propagate)
+                        if matches!(propagate_val, syn::Expr::Tuple(t) if t.elems.is_empty()) {
+                            quote! { #[entity_event(propagate)] }
+                        } else {
+                            // Custom propagate value
+                            quote! { #[entity_event(propagate = #propagate_val)] }
+                        }
+                    } else {
+                        quote! {}
+                    }
+                } else {
+                    quote! {}
+                };
+
                 if should_derive_deref {
                     uses_deref_derives = true;
                     quote! {
                         /// Event type corresponding to the enum variant.
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(Event, Deref, DerefMut, Clone, Debug)]
+                        #propagate_attr
+                        #[derive(#event_derive, Deref, DerefMut, Clone, Debug)]
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #(#field_tokens)*
                         }
@@ -628,7 +908,8 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
                     quote! {
                         /// Event type corresponding to the enum variant.
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(Event, Clone, Debug)]
+                        #propagate_attr
+                        #[derive(#event_derive, Clone, Debug)]
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #(#field_tokens)*
                         }
@@ -651,10 +932,20 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    let event_import = if is_entity_event {
+        quote! {
+            use bevy::prelude::{Entity, EntityEvent};
+        }
+    } else {
+        quote! {
+            use bevy::prelude::Event;
+        }
+    };
+
     let expanded = quote! {
         /// Generated module containing event types for each enum variant.
         pub mod #module_name {
-            use bevy::prelude::Event;
+            #event_import
             #deref_imports
 
             #(#struct_defs)*
