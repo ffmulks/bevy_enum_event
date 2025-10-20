@@ -15,7 +15,7 @@
 //! - `#[derive(EnumEvent)]` - Generates `Event` types
 //! - `#[derive(EnumEntityEvent)]` - Generates `EntityEvent` types
 //!
-//! # Example: EnumEvent (Unit Variants)
+//! # Example: `EnumEvent` (Unit Variants)
 //!
 //! ```rust
 //! use bevy::prelude::*;
@@ -125,10 +125,10 @@ assert_eq!(team_score.points, 50);
 //!
 //! ```toml
 //! [dependencies]
-//! bevy_enum_event = { version = "0.1", default-features = false }
+//! bevy_enum_event = { version = "0.2", default-features = false }
 //! ```
 //!
-//! # Example: EnumEntityEvent
+//! # Example: `EnumEntityEvent`
 //!
 //! ```rust
 //! use bevy::prelude::*;
@@ -146,7 +146,7 @@ assert_eq!(team_score.points, 50);
 //! }
 //! ```
 //!
-//! # EntityEvent Features
+//! # `EntityEvent` Features
 //!
 //! ## Custom Target Field
 //!
@@ -184,9 +184,8 @@ assert_eq!(team_score.points, 50);
 //! }
 //!
 //! // Custom relationship type
-//! # struct CustomRelationship;
 //! #[derive(EnumEntityEvent, Clone, Copy)]
-//! #[enum_event(propagate = &'static CustomRelationship)]
+//! #[enum_event(propagate = &'static ::bevy::prelude::ChildOf)]
 //! enum CustomEvent {
 //!     Action { entity: Entity },
 //! }
@@ -261,7 +260,7 @@ impl<'a> GenericsUsageCollector<'a> {
     }
 }
 
-impl<'a, 'ast> Visit<'ast> for GenericsUsageCollector<'a> {
+impl<'ast> Visit<'ast> for GenericsUsageCollector<'_> {
     fn visit_type_path(&mut self, type_path: &'ast syn::TypePath) {
         if type_path.qself.is_none() {
             if let Some(ident) = type_path.path.get_ident() {
@@ -286,8 +285,7 @@ impl<'a, 'ast> Visit<'ast> for GenericsUsageCollector<'a> {
 fn path_ends_with_ident(path: &syn::Path, ident: &str) -> bool {
     path.segments
         .last()
-        .map(|segment| segment.ident == ident)
-        .unwrap_or(false)
+        .is_some_and(|segment| segment.ident == ident)
 }
 
 #[derive(Default)]
@@ -296,6 +294,12 @@ struct FieldAttrInfo {
     has_deref: bool,
     has_deref_mut: bool,
     is_event_target: bool,
+}
+
+#[derive(Default)]
+struct VariantAttrInfo {
+    propagate_value: Option<proc_macro2::TokenStream>,
+    has_auto_propagate: bool,
 }
 
 fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
@@ -325,6 +329,39 @@ fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
             info.has_deref = true;
         } else {
             info.passthrough_attrs.push(attr.clone());
+        }
+    }
+
+    info
+}
+
+fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
+    let mut info = VariantAttrInfo::default();
+
+    for attr in attrs {
+        if path_ends_with_ident(attr.path(), "enum_event") {
+            if let Err(err) = attr.parse_nested_meta(|meta| {
+                if path_ends_with_ident(&meta.path, "auto_propagate") {
+                    info.has_auto_propagate = true;
+                    Ok(())
+                } else if path_ends_with_ident(&meta.path, "propagate") {
+                    if meta.input.peek(syn::Token![=]) {
+                        // Parse: propagate = <value>
+                        meta.input.parse::<syn::Token![=]>()?;
+                        let tokens: proc_macro2::TokenStream = meta.input.parse()?;
+                        info.propagate_value = Some(tokens);
+                    } else {
+                        // Just: propagate (no value, uses default)
+                        info.propagate_value = Some(quote! {});
+                    }
+                    Ok(())
+                } else {
+                    // Unknown attributes on variants are just ignored (could be other macro's attributes)
+                    Ok(())
+                }
+            }) {
+                panic!("EnumEvent: failed to parse variant #[enum_event(...)] attribute: {err}");
+            }
         }
     }
 
@@ -400,7 +437,7 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 /// Derive macro that generates Bevy entity event types from enum variants.
 ///
 /// This macro works like `EnumEvent`, but generates `EntityEvent` types instead of `Event` types.
-/// EntityEvents target specific entities and can trigger entity-specific observers.
+/// `EntityEvents` target specific entities and can trigger entity-specific observers.
 ///
 /// # Entity Field
 ///
@@ -414,6 +451,37 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 ///
 /// You can optionally specify a custom relationship type for propagation:
 /// `#[enum_event(propagate = &'static RelationshipType)]`
+///
+/// For automatic propagation (bubbling events up the hierarchy), use `auto_propagate`:
+/// `#[enum_event(auto_propagate, propagate = &'static RelationshipType)]`
+///
+/// ## Variant-Level Propagate
+///
+/// You can override enum-level propagation settings on individual variants by adding
+/// `#[enum_event(propagate)]` attributes to specific variants. This allows for fine-grained
+/// control over which variants propagate and how:
+///
+/// - **Enum-level only**: All variants inherit the same propagation settings
+/// - **Variant-level override**: Variants can override enum-level settings
+/// - **Mixed mode**: Some variants can have no propagation while others do
+///
+/// ```rust
+/// use bevy::prelude::*;
+/// use bevy_enum_event::EnumEntityEvent;
+///
+/// #[derive(EnumEntityEvent, Clone, Copy)]
+/// #[enum_event(propagate)]  // Default for all variants
+/// #[allow(dead_code)]
+/// enum MixedEvent {
+///     Normal { entity: Entity },  // Uses enum-level propagate
+///
+///     #[enum_event(auto_propagate, propagate)]  // Overrides with auto_propagate
+///     AutoEvent { entity: Entity },
+///
+///     #[enum_event(propagate = &'static ::bevy::prelude::ChildOf)]  // Custom relationship
+///     CustomEvent { entity: Entity },
+/// }
+/// ```
 ///
 /// # Example
 ///
@@ -466,7 +534,7 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 ///
 /// // Using a custom relationship type (e.g., ChildOf for parent-child hierarchies)
 /// #[derive(EnumEntityEvent, Clone, Copy)]
-/// #[enum_event(propagate = &'static bevy::hierarchy::ChildOf)]
+/// #[enum_event(propagate = &'static ::bevy::prelude::ChildOf)]
 /// enum HierarchyEvent {
 ///     NodeChanged { entity: Entity },
 /// }
@@ -479,34 +547,44 @@ pub fn derive_enum_entity_events(input: TokenStream) -> TokenStream {
     derive_enum_event_impl(input, true)
 }
 
+#[allow(clippy::too_many_lines)]
 fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_name = &input.ident;
 
-    // Check for propagate attribute on the enum
-    // Can be either #[enum_event(propagate)] or #[enum_event(propagate = &'static RelType)]
-    let mut propagate_value: Option<syn::Expr> = None;
+    // Check for propagate and auto_propagate attributes on the enum
+    // Can be: #[enum_event(propagate)]
+    //         #[enum_event(propagate = &'static RelType)]
+    //         #[enum_event(auto_propagate, propagate = &'static RelType)]
+    let mut propagate_value: Option<proc_macro2::TokenStream> = None;
+    let mut has_auto_propagate = false;
+
     for attr in &input.attrs {
         if path_ends_with_ident(attr.path(), "enum_event") {
-            let _ = attr.parse_nested_meta(|meta| {
-                if path_ends_with_ident(&meta.path, "propagate") {
+            attr.parse_nested_meta(|meta| {
+                if path_ends_with_ident(&meta.path, "auto_propagate") {
+                    has_auto_propagate = true;
+                    Ok(())
+                } else if path_ends_with_ident(&meta.path, "propagate") {
                     if meta.input.peek(syn::Token![=]) {
-                        // Parse: propagate = <expr>
-                        let _eq: syn::Token![=] = meta.input.parse()?;
-                        let expr: syn::Expr = meta.input.parse()?;
-                        propagate_value = Some(expr);
+                        // Parse: propagate = <value>
+                        // Capture the remaining tokens as-is without parsing
+                        meta.input.parse::<syn::Token![=]>()?;
+                        // Parse the rest of the input as raw tokens
+                        let tokens: proc_macro2::TokenStream = meta.input.parse()?;
+                        propagate_value = Some(tokens);
                     } else {
                         // Just: propagate (no value, uses default)
-                        propagate_value = Some(syn::parse_quote!(()));
+                        propagate_value = Some(quote! {});
                     }
                     Ok(())
                 } else {
                     Err(meta.error("unknown enum_event attribute"))
                 }
-            });
+            })
+            .unwrap_or_else(|e| panic!("Failed to parse enum_event attribute: {e}"));
         }
     }
-    let has_propagate = propagate_value.is_some();
 
     // Extract variants from enum
     let variants = match &input.data {
@@ -517,6 +595,36 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
     // Convert EnumName to snake_case for module name
     let module_name_str = to_snake_case(&enum_name.to_string());
     let module_name = syn::Ident::new(&module_name_str, enum_name.span());
+
+    #[allow(clippy::items_after_statements)]
+    fn adjust_propagate_type_for_module(ty: &mut syn::Type) {
+        fn adjust_path(path: &mut syn::TypePath) {
+            if path.path.leading_colon.is_some() {
+                return;
+            }
+
+            if let Some(first) = path.path.segments.first() {
+                let ident = &first.ident;
+                let starts_with_crate = ident == "crate";
+                let starts_with_super = ident == "super";
+                let starts_with_self = ident == "self";
+
+                if starts_with_crate || starts_with_super || starts_with_self {
+                    return;
+                }
+            }
+
+            path.path.segments.insert(0, syn::parse_quote!(super));
+        }
+
+        match ty {
+            syn::Type::Reference(ref mut reference) => {
+                adjust_propagate_type_for_module(&mut reference.elem);
+            }
+            syn::Type::Path(ref mut type_path) => adjust_path(type_path),
+            _ => {}
+        }
+    }
 
     let generics = input.generics.clone();
     let struct_generics = if generics.params.is_empty() {
@@ -552,9 +660,27 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
         let variant_ident = &variant.ident;
         let struct_generics_tokens = struct_generics.clone();
 
+        // Parse variant-level propagate attributes
+        let variant_attr_info = analyze_variant_attrs(&variant.attrs);
+
+        // Determine propagate settings for this variant:
+        // - If variant has propagate settings, use those (override enum-level)
+        // - Otherwise, use enum-level settings
+        let variant_has_propagate = variant_attr_info.propagate_value.is_some();
+        let variant_propagate_value = if variant_has_propagate {
+            variant_attr_info.propagate_value.clone()
+        } else {
+            propagate_value.clone()
+        };
+        let variant_auto_propagate = if variant_has_propagate {
+            variant_attr_info.has_auto_propagate
+        } else {
+            has_auto_propagate
+        };
+
         let mut usage_collector =
             GenericsUsageCollector::new(&type_param_names, &lifetime_param_names);
-        for field in variant.fields.iter() {
+        for field in &variant.fields {
             usage_collector.visit_type(&field.ty);
         }
         let unused_type_params: Vec<_> = type_params
@@ -595,33 +721,25 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
                                 || field
                                     .ident
                                     .as_ref()
-                                    .map(|id| id == "entity")
-                                    .unwrap_or(false)
+                                    .is_some_and(|id| id == "entity")
                         })
                         .collect();
 
-                    if target_fields.len() > 1 {
-                        panic!(
-                            "EnumEntityEvent: variant `{}` has multiple fields marked as event target; only one field can be the target",
-                            variant_ident
+                    assert!(target_fields.len() <= 1,
+                            "EnumEntityEvent: variant `{variant_ident}` has multiple fields marked as event target; only one field can be the target"
                         );
-                    }
 
                     !target_fields.is_empty()
                 }
-                Fields::Unnamed(_) => false,
-                Fields::Unit => false,
+                Fields::Unnamed(_) | Fields::Unit => false,
             }
         } else {
             false
         };
 
-        if is_entity_event && !has_entity_field {
-            panic!(
-                "EnumEntityEvent: variant `{}` must have an `entity: Entity` field or a field marked with #[enum_event(target)]",
-                variant_ident
+        assert!(!is_entity_event || has_entity_field,
+                "EnumEntityEvent: variant `{variant_ident}` must have an `entity: Entity` field or a field marked with #[enum_event(target)]"
             );
-        }
 
         let event_derive = if is_entity_event {
             quote! { EntityEvent }
@@ -632,12 +750,9 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
         let struct_def = match &variant.fields {
             Fields::Unit => {
                 // Unit variants cannot be EntityEvents
-                if is_entity_event {
-                    panic!(
-                        "EnumEntityEvent: variant `{}` is a unit variant; entity events must have at least an entity field",
-                        variant_ident
+                assert!(!is_entity_event,
+                        "EnumEntityEvent: variant `{variant_ident}` is a unit variant; entity events must have at least an entity field"
                     );
-                }
 
                 if let Some(phantom_type) = phantom_type.clone() {
                     let (impl_generics_impl, ty_generics_impl, where_clause_impl) =
@@ -672,12 +787,9 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
             }
             Fields::Unnamed(fields) => {
                 // Tuple variants cannot be EntityEvents
-                if is_entity_event {
-                    panic!(
-                        "EnumEntityEvent: variant `{}` is a tuple variant; entity events must use named fields with an `entity: Entity` field",
-                        variant_ident
+                assert!(!is_entity_event,
+                        "EnumEntityEvent: variant `{variant_ident}` is a tuple variant; entity events must use named fields with an `entity: Entity` field"
                     );
-                }
 
                 let struct_generics_tokens = struct_generics_tokens.clone();
                 let field_infos: Vec<_> = fields
@@ -694,12 +806,9 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
                     .filter(|(info, _)| info.has_deref)
                     .count();
 
-                if field_count > 1 && deref_attr_fields > 1 {
-                    panic!(
-                        "EnumEvent: variant `{}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced",
-                        variant_ident
+                assert!(!(field_count > 1 && deref_attr_fields > 1),
+                        "EnumEvent: variant `{variant_ident}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced"
                     );
-                }
 
                 let should_derive_deref =
                     cfg!(feature = "deref") && (field_count == 1 || deref_attr_fields == 1);
@@ -798,12 +907,9 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
                     .filter(|(info, _, _)| info.has_deref)
                     .count();
 
-                if field_count > 1 && deref_attr_fields > 1 {
-                    panic!(
-                        "EnumEvent: variant `{}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced",
-                        variant_ident
+                assert!(!(field_count > 1 && deref_attr_fields > 1),
+                        "EnumEvent: variant `{variant_ident}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced"
                     );
-                }
 
                 let should_derive_deref =
                     cfg!(feature = "deref") && (field_count == 1 || deref_attr_fields == 1);
@@ -877,17 +983,31 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
 
                 // Note: We accept #[enum_event(propagate)] on the enum, but generate #[entity_event(propagate)]
                 // on the struct because that's what Bevy's EntityEvent derive expects
-                let propagate_attr = if is_entity_event && has_propagate {
-                    if let Some(ref propagate_val) = propagate_value {
-                        // Check if it's the unit value (default propagate)
-                        if matches!(propagate_val, syn::Expr::Tuple(t) if t.elems.is_empty()) {
-                            quote! { #[entity_event(propagate)] }
-                        } else {
-                            // Custom propagate value
-                            quote! { #[entity_event(propagate = #propagate_val)] }
+                // Generate variant-specific propagate attributes
+                let propagate_attr = if is_entity_event && variant_propagate_value.is_some() {
+                    match variant_propagate_value.clone() {
+                        Some(tokens) if tokens.is_empty() => {
+                            if variant_auto_propagate {
+                                quote! { #[entity_event(auto_propagate, propagate)] }
+                            } else {
+                                quote! { #[entity_event(propagate)] }
+                            }
                         }
-                    } else {
-                        quote! {}
+                        Some(tokens) => {
+                            let adjusted_tokens = if let Ok(mut ty) = syn::parse2::<syn::Type>(tokens.clone()) {
+                                adjust_propagate_type_for_module(&mut ty);
+                                quote! { #ty }
+                            } else {
+                                quote! { #tokens }
+                            };
+
+                            if variant_auto_propagate {
+                                quote! { #[entity_event(auto_propagate, propagate = #adjusted_tokens)] }
+                            } else {
+                                quote! { #[entity_event(propagate = #adjusted_tokens)] }
+                            }
+                        }
+                        None => quote! {},
                     }
                 } else {
                     quote! {}
@@ -898,8 +1018,8 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
                     quote! {
                         /// Event type corresponding to the enum variant.
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #propagate_attr
                         #[derive(#event_derive, Deref, DerefMut, Clone, Debug)]
+                        #propagate_attr
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #(#field_tokens)*
                         }
@@ -908,8 +1028,8 @@ fn derive_enum_event_impl(input: TokenStream, is_entity_event: bool) -> TokenStr
                     quote! {
                         /// Event type corresponding to the enum variant.
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #propagate_attr
                         #[derive(#event_derive, Clone, Debug)]
+                        #propagate_attr
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #(#field_tokens)*
                         }
@@ -969,3 +1089,4 @@ mod tests {
         assert_eq!(to_snake_case("MyHTTPSConnection"), "my_https_connection");
     }
 }
+

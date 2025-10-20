@@ -237,6 +237,13 @@ fn test_generic_enum_support() {
         Unit,
     }
 
+    #[derive(EnumEvent, Clone, Copy, Debug)]
+    #[allow(dead_code)]
+    enum BorrowedEnum<'event> {
+        Reference(&'event i32),
+        Unit,
+    }
+
     let value = String::from("hello");
     let owned = generic_enum::Owned(value.clone());
     assert_eq!(owned.0, value);
@@ -246,13 +253,6 @@ fn test_generic_enum_support() {
     assert_eq!(pair.1, 7);
 
     let _unit = generic_enum::Unit::<String>::default();
-
-    #[derive(EnumEvent, Clone, Copy, Debug)]
-    #[allow(dead_code)]
-    enum BorrowedEnum<'event> {
-        Reference(&'event i32),
-        Unit,
-    }
 
     let data = 42;
     let reference = borrowed_enum::Reference(&data);
@@ -302,14 +302,14 @@ fn test_entity_event_with_data() {
         amount: 10.5,
     };
     assert_eq!(damaged.entity, entity);
-    assert_eq!(damaged.amount, 10.5);
+    assert!((damaged.amount - 10.5).abs() < f32::EPSILON);
 
     let healed = combat_event::Healed {
         entity,
         amount: 5.0,
     };
     assert_eq!(healed.entity, entity);
-    assert_eq!(healed.amount, 5.0);
+    assert!((healed.amount - 5.0).abs() < f32::EPSILON);
 }
 
 // Test EntityEvent with custom target field
@@ -354,27 +354,19 @@ fn test_entity_event_propagate() {
 // Test EntityEvent with custom propagate relationship
 // Note: This test just verifies the macro accepts the syntax and generates valid code
 // The actual propagate relationship would be used at runtime by Bevy's observer system
+
+pub type CustomRelationship = ::bevy::prelude::ChildOf;
+
+#[derive(EnumEntityEvent, Clone, Copy)]
+#[enum_event(propagate = &'static crate::CustomRelationship)]
+#[allow(dead_code)]
+enum HierarchyEvent {
+    NodeAdded { entity: Entity },
+    NodeRemoved { entity: Entity },
+}
+
 #[test]
 fn test_entity_event_custom_propagate() {
-    use bevy::ecs::relationship;
-    use bevy::prelude::{Component, EntityEvent};
-
-    #[derive(Component)]
-    #[relationship(relationship_target = CustomRelationshipTarget)]
-    struct CustomRelationship(pub Entity);
-
-    #[derive(Component)]
-    #[relationship_target(relationship = CustomRelationship, linked_spawn)]
-    struct CustomRelationshipTarget(Vec<Entity>);
-
-    #[derive(EnumEntityEvent, Clone, Copy)]
-    #[enum_event(propagate = &'static CustomRelationship)]
-    #[allow(dead_code)]
-    enum HierarchyEvent {
-        NodeAdded { entity: Entity },
-        NodeRemoved { entity: Entity },
-    }
-
     let entity = Entity::from_bits(20);
     let added = hierarchy_event::NodeAdded { entity };
     assert_eq!(added.entity, entity);

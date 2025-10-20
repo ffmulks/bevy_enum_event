@@ -305,10 +305,35 @@ use bevy_enum_event::EnumEntityEvent;
 
 // Use a custom relationship type
 #[derive(EnumEntityEvent, Clone, Copy)]
-#[enum_event(propagate = &'static bevy::hierarchy::ChildOf)]
+#[enum_event(propagate = &'static ::bevy::hierarchy::ChildOf)]
 enum HierarchyEvent {
     NodeChanged { entity: Entity },
     NodeAdded { entity: Entity },
+}
+```
+
+#### Automatic Event Propagation
+
+For events that should automatically bubble up the hierarchy, use `auto_propagate`:
+
+```rust
+use bevy::prelude::*;
+use bevy_enum_event::EnumEntityEvent;
+
+#[derive(Component)]
+#[relationship(relationship_target = CustomRelationshipTarget)]
+pub struct CustomRelationship(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = CustomRelationship, linked_spawn)]
+pub struct CustomRelationshipTarget(Vec<Entity>);
+
+// Events will automatically propagate up the CustomRelationship chain
+// Note that as a submodule is created, super::CustomRelationship is used internally unless you specify an absolute path. The relationship and target, thus, need to be public.
+#[derive(EnumEntityEvent, Clone, Copy)]
+#[enum_event(auto_propagate, propagate = &'static CustomRelationship)]
+enum NetworkEvent {
+    DataReceived { entity: Entity },
 }
 ```
 
@@ -316,6 +341,7 @@ This is useful when you want to propagate events along custom relationship types
 
 ### Important Notes for EntityEvent
 
+- **Custom relationships must be exported**: If you provide `propagate = ...` with a custom relationship type, declare that type `pub` (or reference it via an absolute path such as `crate::` or `::bevy::`). Non-public relationships cannot be accessed from the generated module.
 - **Named fields only**: `EnumEntityEvent` requires named fields (struct-style variants). Tuple and unit variants are not supported.
 - **Entity field required**: Each variant must have either a field named `entity: Entity` or a field marked with `#[enum_event(target)]`.
 - **Triggering events**: Use `commands.trigger(event)` or `world.trigger(event)` to trigger entity events.

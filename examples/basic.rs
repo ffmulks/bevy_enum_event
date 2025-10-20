@@ -12,7 +12,7 @@ use bevy_enum_event::EnumEvent;
 // Example 1: Unit variants only (e.g., simple state machine)
 #[derive(EnumEvent, Clone, Copy, Debug)]
 #[allow(dead_code)]
-enum PlayerState {
+pub enum PlayerState {
     Idle,
     Running,
     Jumping,
@@ -21,7 +21,7 @@ enum PlayerState {
 // Example 2: Mixed variants with data (realistic game events)
 #[derive(EnumEvent, Clone, Debug)]
 #[allow(dead_code)]
-enum GameEvent {
+pub enum GameEvent {
     /// A player wins with their team name
     Victory(String),
     /// Score updated for a team
@@ -33,7 +33,7 @@ enum GameEvent {
 // Example 3: Single-field variants (benefit from deref feature)
 #[derive(EnumEvent, Clone, Debug)]
 #[allow(dead_code)]
-enum NetworkEvent {
+pub enum NetworkEvent {
     MessageReceived(String),
     Disconnected,
 }
