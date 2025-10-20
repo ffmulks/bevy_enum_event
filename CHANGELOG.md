@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -21,17 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration tests demonstrating observer behavior and event propagation
 - README sections covering `auto_propagate` usage and custom relationship visibility
 
-### Changed
-- Updated to Bevy 0.17 API
-- Improved documentation with more examples
-- Enhanced error messages for better developer experience
-
-### Fixed
-- All clippy pedantic warnings resolved
-- Boolean expression simplifications for cleaner code
-- Improved code organization and consistency
-- Suppressed legacy derive helper warnings in tests (rust-lang/rust#79202)
-
 ## [0.1.0] - 2025-10-20
 
 ### Added
@@ -47,5 +35,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 - `deref` (default): Automatic `Deref` and `DerefMut` implementation for single-field variants
-
-[0.1.0]: https://github.com/ffmulks/bevy_enum_event/releases/tag/v0.1.0
