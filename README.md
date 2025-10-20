@@ -341,8 +341,8 @@ enum UiEvent {
 fn on_click(mut click: On<ui_event::Click>) {
     println!("Clicked on: {:?}", click.entity);
 
-    // Stop the event from bubbling up to parent entities
-    click.propagate(false);
+    // Cause the event to bubbling up to parent entities
+    click.propagate(true);
 
     // Access the original target that triggered the event
     let original = click.original_event_target();
@@ -405,12 +405,6 @@ enum MixedEvent {
     CustomEvent { entity: Entity },
 }
 
-```
-
----
-
-# Additional Information
-
 ## Snake Case Conversion
 
 The macro intelligently converts enum names to snake_case module names:
@@ -419,6 +413,31 @@ The macro intelligently converts enum names to snake_case module names:
 - `PlayerState` → `player_state`
 - `HTTPServer` → `http_server`
 - `MyHTTPSConnection` → `my_https_connection`
+
+## Generics & Lifetimes
+
+All derives mirror the generic parameters, lifetimes, and `where` clauses from your enum onto the generated
+event structs. This makes it straightforward to use `EnumEvent` with enums such as:
+
+```rust
+#[derive(EnumEvent, Clone)]
+enum GenericEvent<'a, T>
+where
+    T: Clone + 'a,
+{
+    Borrowed(&'a T),
+    Owned(T),
+    Done,
+}
+```
+
+The generated module exposes `generic_event::Borrowed<'a, T>`, `generic_event::Owned<'a, T>`, and
+`generic_event::Done<'a, T>` types with identical bounds.
+
+Unit event structs expose ergonomic constructors so you never have to juggle hidden `PhantomData`
+markers by hand. Every unit variant implements `Default`, and when a phantom marker is required the
+derive also emits a `new()` helper that seeds it for you. Tuple and named variants that require
+phantom markers likewise receive `new(...)` helpers that accept only the original fields.
 
 ## Use Cases
 
