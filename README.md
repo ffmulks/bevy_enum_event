@@ -73,7 +73,7 @@ use bevy_enum_event::EnumEvent;
 #[derive(EnumEvent, Clone)]
 enum GameEvent {
     PlayerSpawned(Entity),
-    ScoreChanged { player: Entity, score: i32 },
+    ScoreChanged { #[enum_event(deref)] player: Entity, score: i32 },
     GameOver,
 }
 ```
@@ -149,7 +149,7 @@ fn on_entity_spawned(trigger: Trigger<entity_event::Spawned>) {
 
 ## Feature: `deref` (enabled by default)
 
-The `deref` feature automatically implements `Deref` and `DerefMut` for enum variants with a single field (either tuple or named). For multi-field variants, you can opt into the same ergonomic access by adding `#[enum_event(deref)]` to the field you want to expose (the generated struct receives Bevy's `#[deref]` attribute).
+The `deref` feature automatically derives Bevy's `Deref` and `DerefMut` traits for enum variants with a single field (either tuple or named), providing ergonomic access to the inner value. For multi-field variants, you can opt into the same ergonomic access by adding `#[enum_event(deref)]` to the field you want to expose (the generated struct receives Bevy's `#[deref]` attribute). If a multi-field variant is not annotated with `#[enum_event(deref)]`, no deref functionality is generated and fields must be accessed directly by name.
 
 ### Example
 
@@ -163,10 +163,11 @@ enum EntityEvent {
     Destroyed(Entity),
     HealthChanged { value: f32 },
     Scored { #[enum_event(deref)] player: Entity, points: u32 },
+    TeamScore { team: u32, points: u32 },  // No deref annotation, no derive will happen
 }
 
 fn on_spawned(trigger: Trigger<entity_event::Spawned>) {
-    // With deref feature, you can access the Entity directly
+    // With deref feature, single-field variants can access the Entity directly
     let entity: Entity = *trigger.event();
     println!("Entity spawned: {:?}", entity);
 }
@@ -181,6 +182,12 @@ fn on_scored(trigger: Trigger<entity_event::Scored>) {
     // Multi-field variants work when you mark one field with #[enum_event(deref)]
     let player: Entity = *trigger.event();
     println!("Player {player:?} scored!");
+}
+
+fn on_team_score(trigger: Trigger<entity_event::TeamScore>) {
+    // Multi-field without deref annotation - must access fields directly
+    let event = trigger.event();
+    println!("Team {} scored {} points", event.team, event.points);
 }
 ```
 

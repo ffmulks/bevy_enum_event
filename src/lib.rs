@@ -3,7 +3,7 @@
 //! This crate provides a derive macro that generates Bevy event types from enum variants.
 //! For each variant, it creates a corresponding event struct in a `snake_case` module.
 //!
-//! # Example (Unit Variants)
+//! # Example: Unit Variants
 //!
 //! ```rust
 //! use bevy::prelude::*;
@@ -34,7 +34,7 @@
 //! }
 //! ```
 //!
-//! # Example (Variants with Data)
+//! # Example: Variants with Data
 //!
 //! ```
 //! use bevy_enum_event::EnumEvent;
@@ -70,9 +70,11 @@
 //! # Feature: `deref` (enabled by default)
 //!
 //! When the `deref` feature is enabled (which it is by default), enum variants with a single
-//! field automatically derive `Deref` and `DerefMut`. Multi-field variants can opt into the same
-//! behavior by marking one field with `#[enum_event(deref)]`, allowing direct access to that inner value:
-//!
+//! field automatically derive Bevy's `Deref` and `DerefMut` traits, providing ergonomic access to
+//! the inner value. Multi-field variants can opt into the same behavior by marking one field with
+//! `#[enum_event(deref)]`. If a multi-field variant is not annotated with `#[enum_event(deref)]`,
+//! no deref functionality is generated and fields must be accessed directly by name:
+//! 
 #![cfg_attr(
     feature = "deref",
     doc = r#"
@@ -85,16 +87,23 @@ enum NetworkEvent {
     MessageReceived(String),
     Disconnected,
     PlayerScored { #[enum_event(deref)] player: u32, points: u32 },
+    TeamScore { team: u32, points: u32 },  // No deref annotation
 }
 
-// Test that deref works
+// Single-field variants automatically get deref
 let msg = network_event::MessageReceived("Hello".to_string());
 let content: &String = msg.deref();
 assert_eq!(content, "Hello");
 
+// Multi-field with #[enum_event(deref)] annotation
 let scored = network_event::PlayerScored { player: 7, points: 120 };
 let player: &u32 = scored.deref();
 assert_eq!(*player, 7);
+
+// Multi-field without deref annotation - must access fields directly
+let team_score = network_event::TeamScore { team: 1, points: 50 };
+assert_eq!(team_score.team, 1);
+assert_eq!(team_score.points, 50);
 ```
 "#
 )]
