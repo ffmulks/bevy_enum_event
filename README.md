@@ -8,10 +8,10 @@ General-purpose enum to Bevy event conversion macro.
 
 ## Bevy Compatibility
 
-|  Bevy   | bevy_fsm |
-|---------|----------|
-| 0.17    | -        |
-| 0.16    | 0.1      |
+|  Bevy   | bevy_enum_event |
+|---------|-----------------|
+| 0.17    | -               |
+| 0.16    | 0.1             |
 
 ## Features
 
