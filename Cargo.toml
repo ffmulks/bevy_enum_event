@@ -1,6 +1,6 @@
 [package]
 name = "bevy_enum_event"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Derive macros for Bevy event and message types - generates Event, Message, and EntityEvent types from enum variants with support for triggers, observers, buffered messaging, and entity propagation"
@@ -23,4 +23,4 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 [dev-dependencies]
-bevy = { version = "0.18", default-features = false }
+bevy = { version = "0.19", default-features = false }

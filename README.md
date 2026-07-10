@@ -24,6 +24,7 @@ enum GameEvent {
 
 | Bevy | bevy_enum_event |
 |------|-----------------|
+| 0.19 | 0.4             |
 | 0.18 | 0.3             |
 | 0.17 | 0.2             |
 | 0.16 | 0.1             |
@@ -32,7 +33,7 @@ enum GameEvent {
 
 ```toml
 [dependencies]
-bevy_enum_event = "0.3.2"
+bevy_enum_event = "0.4.0"
 ```
 
 ## Macros

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0] - 2026-07-09
+
+### Changed
+- Migrated to Bevy 0.19 (dev-dependency bumped from `0.18` to `0.19`)
+- Updated the Bevy compatibility table and installation instructions in the README
+
+### Added
+- `tests/bevy_019_compat.rs` covering Bevy 0.19-specific concerns:
+  - Enum variants named after Bevy 0.19's newly-shortened prelude lifecycle
+    events (`Add`, `Insert`, `Replace`, `Remove`, `Despawn`) generate
+    non-colliding event/message/entity-event types and their observers still fire
+  - Generated types remain plain events and are unaffected by Bevy 0.19's
+    "resources are components" change
+
+### Notes
+- No source changes were required: the derive macros only depend on the public
+  `Event`/`Message`/`EntityEvent` derives, `On<_>` observers,
+  `MessageWriter`/`MessageReader`/`add_message`, and propagation attributes, all
+  of which are unchanged in Bevy 0.19. The full existing test suite passes
+  against Bevy 0.19 unmodified. Bevy 0.19 requires Rust 1.95.0 or newer.
+
 ## [0.3.2] - 2026-01-22
 
 ### Added
