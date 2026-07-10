@@ -221,12 +221,12 @@ impl<'a> GenericsUsageCollector<'a> {
 
 impl<'ast> Visit<'ast> for GenericsUsageCollector<'_> {
     fn visit_type_path(&mut self, type_path: &'ast syn::TypePath) {
-        if type_path.qself.is_none() {
-            if let Some(ident) = type_path.path.get_ident() {
-                let ident_str = ident.to_string();
-                if self.type_names.iter().any(|name| name == &ident_str) {
-                    self.used_types.insert(ident_str);
-                }
+        if type_path.qself.is_none()
+            && let Some(ident) = type_path.path.get_ident()
+        {
+            let ident_str = ident.to_string();
+            if self.type_names.iter().any(|name| name == &ident_str) {
+                self.used_types.insert(ident_str);
             }
         }
         syn::visit::visit_type_path(self, type_path);
@@ -383,8 +383,8 @@ fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
     let mut info = VariantAttrInfo::default();
 
     for attr in attrs {
-        if path_ends_with_ident(attr.path(), "enum_event") {
-            if let Err(err) = attr.parse_nested_meta(|meta| {
+        if path_ends_with_ident(attr.path(), "enum_event")
+            && let Err(err) = attr.parse_nested_meta(|meta| {
                 if path_ends_with_ident(&meta.path, "auto_propagate") {
                     info.has_auto_propagate = true;
                     Ok(())
@@ -416,9 +416,9 @@ fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
                     skip_meta_value(&meta);
                     Ok(())
                 }
-            }) {
-                panic!("EnumMessage: failed to parse variant #[enum_event(...)] attribute: {err}");
-            }
+            })
+        {
+            panic!("EnumMessage: failed to parse variant #[enum_event(...)] attribute: {err}");
         }
     }
 

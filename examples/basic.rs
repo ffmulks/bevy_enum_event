@@ -76,7 +76,7 @@ fn main() {
     #[cfg(feature = "deref")]
     {
         // With deref feature enabled (default), we can access the inner value directly
-        println!("  Message (via deref): {}", &*msg);
+        println!("  Message (via deref): {}", *msg);
         println!("  Message length (via deref): {} chars", msg.len());
     }
 
