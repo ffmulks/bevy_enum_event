@@ -418,7 +418,7 @@ fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
                 }
             })
         {
-            panic!("EnumMessage: failed to parse variant #[enum_event(...)] attribute: {err}");
+            panic!("bevy_enum_event: failed to parse variant #[enum_event(...)] attribute: {err}");
         }
     }
 

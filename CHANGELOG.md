@@ -10,6 +10,10 @@
   where it is additive to the enum-level list.
 
 ### Fixed
+- Variant attribute parse errors are now reported with the crate-generic
+  `bevy_enum_event:` prefix instead of hardcoding `EnumMessage:`. The failing
+  parser is shared by all three derives, so an `EnumEvent` or `EnumEntityEvent`
+  error previously blamed the wrong macro.
 - `Copy` (and other reasonable derives) are now forwarded to the generated
   event/message structs, not just to field-less unit variants
   ([#1](https://github.com/MolecularSadism/bevy_enum_event/issues/1)). Small
