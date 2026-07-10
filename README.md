@@ -3,7 +3,7 @@
 [![CI](https://github.com/MolecularSadism/bevy_enum_event/workflows/CI/badge.svg)](https://github.com/MolecularSadism/bevy_enum_event/actions)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](https://github.com/MolecularSadism/bevy_enum_event#license)
 [![Bevy](https://img.shields.io/badge/Bevy-0.19-blue.svg)](https://bevyengine.org/)
-[![Rust](https://img.shields.io/badge/rust-2021%20edition-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-2024%20edition-orange.svg)](https://www.rust-lang.org/)
 
 Derive macros that generate Bevy event and message types from enum variants.
 

@@ -171,7 +171,7 @@ assert_eq!(*scored.deref(), 7);
 use proc_macro::TokenStream;
 use quote::quote;
 use std::collections::HashSet;
-use syn::{parse_macro_input, visit::Visit, Attribute, Data, DeriveInput, Fields};
+use syn::{Attribute, Data, DeriveInput, Fields, parse_macro_input, visit::Visit};
 
 /// Converts `PascalCase` or `camelCase` to `snake_case`.
 ///
@@ -599,10 +599,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
         }
 
         match ty {
-            syn::Type::Reference(ref mut reference) => {
+            syn::Type::Reference(reference) => {
                 adjust_propagate_type_for_module(&mut reference.elem);
             }
-            syn::Type::Path(ref mut type_path) => adjust_path(type_path),
+            syn::Type::Path(type_path) => adjust_path(type_path),
             _ => {}
         }
     }
@@ -732,9 +732,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                         })
                         .collect();
 
-                    assert!(target_fields.len() <= 1,
-                            "EnumEntityEvent: variant `{variant_ident}` has multiple fields marked as event target; only one field can be the target"
-                        );
+                    assert!(
+                        target_fields.len() <= 1,
+                        "EnumEntityEvent: variant `{variant_ident}` has multiple fields marked as event target; only one field can be the target"
+                    );
 
                     !target_fields.is_empty()
                 }
@@ -744,9 +745,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
             false
         };
 
-        assert!(!is_entity_event || has_entity_field,
-                "EnumEntityEvent: variant `{variant_ident}` must have an `entity: Entity` field or a field marked with #[enum_event(target)]"
-            );
+        assert!(
+            !is_entity_event || has_entity_field,
+            "EnumEntityEvent: variant `{variant_ident}` must have an `entity: Entity` field or a field marked with #[enum_event(target)]"
+        );
 
         let event_derive = match event_kind {
             EventKind::EntityEvent => quote! { EntityEvent },
@@ -763,9 +765,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
         let struct_def = match &variant.fields {
             Fields::Unit => {
                 // Unit variants cannot be EntityEvents
-                assert!(!is_entity_event,
-                        "EnumEntityEvent: variant `{variant_ident}` is a unit variant; entity events must have at least an entity field"
-                    );
+                assert!(
+                    !is_entity_event,
+                    "EnumEntityEvent: variant `{variant_ident}` is a unit variant; entity events must have at least an entity field"
+                );
 
                 if let Some(phantom_type) = phantom_type.clone() {
                     let (impl_generics_impl, ty_generics_impl, where_clause_impl) =
@@ -800,9 +803,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
             }
             Fields::Unnamed(fields) => {
                 // Tuple variants cannot be EntityEvents
-                assert!(!is_entity_event,
-                        "EnumEntityEvent: variant `{variant_ident}` is a tuple variant; entity events must use named fields with an `entity: Entity` field"
-                    );
+                assert!(
+                    !is_entity_event,
+                    "EnumEntityEvent: variant `{variant_ident}` is a tuple variant; entity events must use named fields with an `entity: Entity` field"
+                );
 
                 let struct_generics_tokens = struct_generics_tokens.clone();
                 let field_infos: Vec<_> = fields
@@ -819,9 +823,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     .filter(|(info, _)| info.has_deref)
                     .count();
 
-                assert!(!(field_count > 1 && deref_attr_fields > 1),
-                        "bevy_enum_event: variant `{variant_ident}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced"
-                    );
+                assert!(
+                    !(field_count > 1 && deref_attr_fields > 1),
+                    "bevy_enum_event: variant `{variant_ident}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced"
+                );
 
                 let should_derive_deref =
                     cfg!(feature = "deref") && (field_count == 1 || deref_attr_fields == 1);
@@ -920,9 +925,10 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     .filter(|(info, _, _)| info.has_deref)
                     .count();
 
-                assert!(!(field_count > 1 && deref_attr_fields > 1),
-                        "bevy_enum_event: variant `{variant_ident}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced"
-                    );
+                assert!(
+                    !(field_count > 1 && deref_attr_fields > 1),
+                    "bevy_enum_event: variant `{variant_ident}` has multiple fields marked for deref (e.g., #[enum_event(deref)]); only one field can be dereferenced"
+                );
 
                 let should_derive_deref =
                     cfg!(feature = "deref") && (field_count == 1 || deref_attr_fields == 1);
