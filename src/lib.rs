@@ -90,6 +90,29 @@ assert_eq!(*scored.deref(), 7);
 "#
 )]
 //!
+//! # Forwarding Derives
+//!
+//! Generated variant structs always derive `Clone` and `Debug` (unit variants
+//! also derive `Copy` and `Default`). To add more derives — most commonly
+//! `Copy` for small events — list them with `#[enum_event(derive(...))]`. A
+//! derive macro cannot observe the enum's own `#[derive(...)]`, so the derives
+//! to forward are named explicitly.
+//!
+//! ```rust
+//! use bevy_enum_event::EnumEvent;
+//!
+//! #[derive(EnumEvent, Clone, Copy, PartialEq)]
+//! #[enum_event(derive(Copy, PartialEq))]
+//! enum Input {
+//!     Jump,
+//!     Move { dx: f32, dy: f32 },
+//! }
+//! // input::Jump and input::Move are both `Copy` + `PartialEq`.
+//! ```
+//!
+//! Per-variant `#[enum_event(derive(...))]` is additive to the enum-level list,
+//! so variants that can satisfy extra bounds can opt in individually.
+//!
 //! # EnumEntityEvent
 //!
 //! Entity-targeted events. Requires named fields with `entity: Entity` or `#[enum_event(target)]`.
@@ -224,6 +247,79 @@ fn path_ends_with_ident(path: &syn::Path, ident: &str) -> bool {
         .is_some_and(|segment| segment.ident == ident)
 }
 
+/// Derives that the generated variant structs always add themselves. Requesting
+/// any of these via `#[enum_event(derive(...))]` is a no-op so that a
+/// forwarded list can be copied verbatim from the enum's own `#[derive(...)]`
+/// without producing conflicting duplicate derives.
+///
+/// A proc-macro derive cannot observe the *other* derives applied to the same
+/// item (the compiler strips the `#[derive(...)]` list before invoking us), so
+/// forwarding is opt-in through the `#[enum_event(derive(...))]` helper
+/// attribute rather than automatic.
+const ALWAYS_DERIVED: &[&str] = &["Clone", "Debug"];
+
+/// Additional derives that unit-variant structs always add on top of
+/// [`ALWAYS_DERIVED`] (they are field-less, so these are always sound).
+const ALWAYS_DERIVED_UNIT: &[&str] = &["Copy", "Default"];
+
+fn path_last_ident(path: &syn::Path) -> Option<String> {
+    path.segments.last().map(|segment| segment.ident.to_string())
+}
+
+/// Parses forwarded derives from `#[enum_event(derive(...))]` on the given
+/// attributes, appending each derive path to `out` while skipping duplicates.
+fn collect_forwarded_derives(attrs: &[Attribute], out: &mut Vec<syn::Path>) {
+    for attr in attrs {
+        if !path_ends_with_ident(attr.path(), "enum_event") {
+            continue;
+        }
+
+        if let Err(err) = attr.parse_nested_meta(|meta| {
+            if path_ends_with_ident(&meta.path, "derive") {
+                meta.parse_nested_meta(|derive_meta| {
+                    if !out.iter().any(|existing| paths_match(existing, &derive_meta.path)) {
+                        out.push(derive_meta.path.clone());
+                    }
+                    Ok(())
+                })
+            } else {
+                // Leave other keys (deref, target, propagate, ...) to their
+                // dedicated parsers.
+                skip_meta_value(&meta);
+                Ok(())
+            }
+        }) {
+            panic!("bevy_enum_event: failed to parse #[enum_event(derive(...))] attribute: {err}");
+        }
+    }
+}
+
+/// Two derive paths are considered the same forwarded derive when their final
+/// segment matches (so `Copy` and `std::marker::Copy` do not both appear).
+fn paths_match(a: &syn::Path, b: &syn::Path) -> bool {
+    path_last_ident(a) == path_last_ident(b)
+}
+
+/// Consumes an optional `= value` or `(...)` payload attached to a nested meta
+/// key we do not handle here, so `parse_nested_meta` can continue past it.
+fn skip_meta_value(meta: &syn::meta::ParseNestedMeta) {
+    if meta.input.peek(syn::Token![=]) {
+        let _ = meta.value().and_then(|value| value.parse::<proc_macro2::TokenStream>());
+    } else if meta.input.peek(syn::token::Paren) {
+        let _ = meta.parse_nested_meta(|_| Ok(()));
+    }
+}
+
+/// Builds the comma-prefixed token list of forwarded derives to splice into a
+/// generated struct's `#[derive(...)]`, skipping any that the struct already
+/// derives (`skip`).
+fn forwarded_derive_tokens(forwarded: &[syn::Path], skip: &[&str]) -> proc_macro2::TokenStream {
+    let filtered = forwarded.iter().filter(|path| {
+        path_last_ident(path).is_none_or(|name| !skip.contains(&name.as_str()))
+    });
+    quote! { #(, #filtered)* }
+}
+
 #[derive(Default)]
 struct FieldAttrInfo {
     passthrough_attrs: Vec<Attribute>,
@@ -236,6 +332,7 @@ struct FieldAttrInfo {
 struct VariantAttrInfo {
     propagate_value: Option<proc_macro2::TokenStream>,
     has_auto_propagate: bool,
+    forwarded_derives: Vec<syn::Path>,
 }
 
 fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
@@ -251,6 +348,10 @@ fn analyze_field_attrs(attrs: &[Attribute]) -> FieldAttrInfo {
                     info.has_deref = true;
                 } else if path_ends_with_ident(&meta.path, "target") {
                     info.is_event_target = true;
+                } else {
+                    // Unknown keys belong to other macros; consume any payload
+                    // so parsing can continue past them.
+                    skip_meta_value(&meta);
                 }
                 Ok(())
             }) {
@@ -291,8 +392,21 @@ fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
                         info.propagate_value = Some(quote! {});
                     }
                     Ok(())
+                } else if path_ends_with_ident(&meta.path, "derive") {
+                    // Per-variant forwarded derives, additive to enum-level ones.
+                    meta.parse_nested_meta(|derive_meta| {
+                        if !info
+                            .forwarded_derives
+                            .iter()
+                            .any(|existing| paths_match(existing, &derive_meta.path))
+                        {
+                            info.forwarded_derives.push(derive_meta.path.clone());
+                        }
+                        Ok(())
+                    })
                 } else {
                     // Unknown attributes on variants are just ignored (could be other macro's attributes)
+                    skip_meta_value(&meta);
                     Ok(())
                 }
             }) {
@@ -433,6 +547,11 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                         propagate_value = Some(quote! {});
                     }
                     Ok(())
+                } else if path_ends_with_ident(&meta.path, "derive") {
+                    // Handled separately by `collect_forwarded_derives`; just
+                    // consume the `(...)` payload here so parsing can continue.
+                    skip_meta_value(&meta);
+                    Ok(())
                 } else {
                     Err(meta.error("unknown enum_event attribute"))
                 }
@@ -506,6 +625,14 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
         .map(|(name, _)| name.clone())
         .collect();
 
+    // Reasonable derives (e.g. `Copy`, `PartialEq`, `Hash`) are forwarded onto
+    // every generated variant struct via `#[enum_event(derive(...))]`. A derive
+    // macro cannot observe the enum's own `#[derive(...)]` list (the compiler
+    // strips it before invoking us), so this opt-in helper attribute is how the
+    // enum's derives get carried onto the generated events.
+    let mut enum_forwarded_derives: Vec<syn::Path> = Vec::new();
+    collect_forwarded_derives(&input.attrs, &mut enum_forwarded_derives);
+
     // Generate struct definitions for each variant
     let mut struct_defs = Vec::new();
     let mut additional_impls = Vec::new();
@@ -517,6 +644,27 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
 
         // Parse variant-level propagate attributes
         let variant_attr_info = analyze_variant_attrs(&variant.attrs);
+
+        // Combine enum-level and variant-level forwarded derives (variant-level
+        // is additive), then build the comma-prefixed token lists to splice into
+        // each struct's `#[derive(...)]`. Field-bearing structs already derive
+        // `Clone`/`Debug`; unit structs also derive `Copy`/`Default`, so those
+        // are filtered out to avoid duplicate-derive errors.
+        let mut variant_forwarded_derives = enum_forwarded_derives.clone();
+        for path in &variant_attr_info.forwarded_derives {
+            if !variant_forwarded_derives
+                .iter()
+                .any(|existing| paths_match(existing, path))
+            {
+                variant_forwarded_derives.push(path.clone());
+            }
+        }
+        let forwarded_derives_field =
+            forwarded_derive_tokens(&variant_forwarded_derives, ALWAYS_DERIVED);
+        let forwarded_derives_unit = forwarded_derive_tokens(
+            &variant_forwarded_derives,
+            &[ALWAYS_DERIVED, ALWAYS_DERIVED_UNIT].concat(),
+        );
 
         // Determine propagate settings for this variant:
         // - If variant has propagate settings, use those (override enum-level)
@@ -628,7 +776,7 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     quote! {
                         #[doc = #struct_doc]
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(#event_derive, Clone, Copy, Debug, Default)]
+                        #[derive(#event_derive, Clone, Copy, Debug, Default #forwarded_derives_unit)]
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #[doc(hidden)]
                             pub(crate) _phantom: #phantom_type,
@@ -638,7 +786,7 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     quote! {
                         #[doc = #struct_doc]
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(#event_derive, Clone, Copy, Debug, Default)]
+                        #[derive(#event_derive, Clone, Copy, Debug, Default #forwarded_derives_unit)]
                         pub struct #variant_ident #struct_generics_tokens #where_clause;
                     }
                 }
@@ -732,14 +880,14 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     quote! {
                         #[doc = #struct_doc]
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(#event_derive, Deref, DerefMut, Clone, Debug)]
+                        #[derive(#event_derive, Deref, DerefMut, Clone, Debug #forwarded_derives_field)]
                         pub struct #variant_ident #struct_generics_tokens(#(#field_tokens),*) #where_clause;
                     }
                 } else {
                     quote! {
                         #[doc = #struct_doc]
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(#event_derive, Clone, Debug)]
+                        #[derive(#event_derive, Clone, Debug #forwarded_derives_field)]
                         pub struct #variant_ident #struct_generics_tokens(#(#field_tokens),*) #where_clause;
                     }
                 }
@@ -877,7 +1025,7 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     quote! {
                         #[doc = #struct_doc]
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(#event_derive, Deref, DerefMut, Clone, Debug)]
+                        #[derive(#event_derive, Deref, DerefMut, Clone, Debug #forwarded_derives_field)]
                         #propagate_attr
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #(#field_tokens)*
@@ -887,7 +1035,7 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
                     quote! {
                         #[doc = #struct_doc]
                         #[allow(unused_lifetimes, unused_type_parameters)]
-                        #[derive(#event_derive, Clone, Debug)]
+                        #[derive(#event_derive, Clone, Debug #forwarded_derives_field)]
                         #propagate_attr
                         pub struct #variant_ident #struct_generics_tokens #where_clause {
                             #(#field_tokens)*

@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `#[enum_event(derive(...))]` helper attribute to forward additional derives
+  onto the generated variant structs (e.g. `#[enum_event(derive(Copy, PartialEq))]`).
+  Because a derive macro cannot observe the enum's sibling `#[derive(...)]`, the
+  derives to forward are listed explicitly. Also supported at the variant level,
+  where it is additive to the enum-level list.
+
+### Fixed
+- `Copy` (and other reasonable derives) are now forwarded to the generated
+  event/message structs, not just to field-less unit variants
+  ([#1](https://github.com/MolecularSadism/bevy_enum_event/issues/1)). Small
+  events can now be copied instead of cloned.
+
 ## [0.4.0] - 2026-07-09
 
 ### Changed
