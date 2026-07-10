@@ -1,4 +1,4 @@
-//! Tests for the EnumMessage derive macro (buffered messages)
+//! Tests for the `EnumMessage` derive macro (buffered messages)
 //! These tests verify that generated message types work correctly with
 //! Bevy's MessageWriter/MessageReader system.
 
@@ -244,6 +244,8 @@ enum TestNetworkMessage {
 #[derive(Resource, Default)]
 struct ReceivedMessages {
     connections: Vec<u32>,
+    // Mirrors the `Disconnected` message variant; not exercised by this test.
+    #[allow(dead_code)]
     disconnections: Vec<(u32, String)>,
     data_packets: Vec<Vec<u8>>,
 }
@@ -324,14 +326,8 @@ fn test_message_writer_reader_integration() {
     // Verify messages were received
     let received = app.world().resource::<ReceivedMessages>();
     assert_eq!(received.connections.len(), 2, "Should have 2 connections");
-    assert!(
-        received.connections.contains(&1),
-        "Should contain player 1"
-    );
-    assert!(
-        received.connections.contains(&2),
-        "Should contain player 2"
-    );
+    assert!(received.connections.contains(&1), "Should contain player 1");
+    assert!(received.connections.contains(&2), "Should contain player 2");
 }
 
 #[test]
@@ -359,11 +355,7 @@ fn test_tuple_message_writer_reader() {
 
     // Verify
     let received = app.world().resource::<ReceivedMessages>();
-    assert_eq!(
-        received.data_packets.len(),
-        2,
-        "Should have 2 data packets"
-    );
+    assert_eq!(received.data_packets.len(), 2, "Should have 2 data packets");
     assert_eq!(received.data_packets[0], vec![1, 2, 3]);
     assert_eq!(received.data_packets[1], vec![4, 5, 6]);
 }
@@ -372,7 +364,9 @@ fn test_tuple_message_writer_reader() {
 // Message with Multiple Readers
 // ============================================================================
 
+// The enum only exists to generate the `broadcast_message` module used below.
 #[derive(EnumMessage, Clone, Debug)]
+#[allow(dead_code)]
 enum BroadcastMessage {
     Announcement(String),
 }
@@ -386,24 +380,35 @@ struct Reader2Count(usize);
 #[derive(Resource, Default)]
 struct BroadcastSent(bool);
 
-fn reader1(mut reader: MessageReader<broadcast_message::Announcement>, mut count: ResMut<Reader1Count>) {
+fn reader1(
+    mut reader: MessageReader<broadcast_message::Announcement>,
+    mut count: ResMut<Reader1Count>,
+) {
     for _msg in reader.read() {
         count.0 += 1;
     }
 }
 
-fn reader2(mut reader: MessageReader<broadcast_message::Announcement>, mut count: ResMut<Reader2Count>) {
+fn reader2(
+    mut reader: MessageReader<broadcast_message::Announcement>,
+    mut count: ResMut<Reader2Count>,
+) {
     for _msg in reader.read() {
         count.0 += 1;
     }
 }
 
-fn send_broadcast(mut writer: MessageWriter<broadcast_message::Announcement>, mut sent: ResMut<BroadcastSent>) {
+fn send_broadcast(
+    mut writer: MessageWriter<broadcast_message::Announcement>,
+    mut sent: ResMut<BroadcastSent>,
+) {
     if sent.0 {
         return;
     }
     sent.0 = true;
-    writer.write(broadcast_message::Announcement("Hello everyone!".to_string()));
+    writer.write(broadcast_message::Announcement(
+        "Hello everyone!".to_string(),
+    ));
 }
 
 #[test]
@@ -417,7 +422,14 @@ fn test_multiple_readers_same_message() {
     app.add_message::<broadcast_message::Announcement>();
 
     // Both readers should be able to read the same message
-    app.add_systems(Update, (send_broadcast, reader1.after(send_broadcast), reader2.after(send_broadcast)));
+    app.add_systems(
+        Update,
+        (
+            send_broadcast,
+            reader1.after(send_broadcast),
+            reader2.after(send_broadcast),
+        ),
+    );
 
     app.update();
     app.update();
