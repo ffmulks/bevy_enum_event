@@ -6,7 +6,7 @@
 //! - Named field variants
 //! - Mixed variants in a single enum
 //! - Deref behavior for single-field variants
-//! - All three derive macros: EnumEvent, EnumMessage, EnumEntityEvent
+//! - All three derive macros: `EnumEvent`, `EnumMessage`, `EnumEntityEvent`
 
 use bevy_enum_event::EnumEvent;
 

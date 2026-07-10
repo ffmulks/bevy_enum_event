@@ -18,3 +18,5 @@ Cargo.lock
 
 # Hidden settings files
 .*/
+# ...but keep GitHub Actions workflows
+!.github/

@@ -1,7 +1,7 @@
 //! Comprehensive integration tests for all three patterns:
-//! - EnumEvent: Observer-based global events (triggered via world.trigger())
-//! - EnumMessage: Buffered messages (written via MessageWriter, read via MessageReader)
-//! - EnumEntityEvent: Entity-targeted observer events with propagation
+//! - `EnumEvent`: Observer-based global events (triggered via `world.trigger()`)
+//! - `EnumMessage`: Buffered messages (written via `MessageWriter`, read via `MessageReader`)
+//! - `EnumEntityEvent`: Entity-targeted observer events with propagation
 //!
 //! This test file demonstrates and verifies the correct usage of each pattern
 //! according to Bevy 0.17+ nomenclature.
@@ -40,7 +40,8 @@ fn test_enum_event_with_triggers_and_observers() {
 
     app.add_observer(
         |event: On<global_game_event::LevelCompleted>, mut log: ResMut<GlobalEventLog>| {
-            log.0.push(format!("level_completed_{}_{}", event.level, event.score));
+            log.0
+                .push(format!("level_completed_{}_{}", event.level, event.score));
         },
     );
 
@@ -53,10 +54,14 @@ fn test_enum_event_with_triggers_and_observers() {
     app.update();
 
     // Trigger events
-    app.world_mut().trigger(global_game_event::LevelStarted { level: 1 });
+    app.world_mut()
+        .trigger(global_game_event::LevelStarted { level: 1 });
     app.update();
 
-    app.world_mut().trigger(global_game_event::LevelCompleted { level: 1, score: 1000 });
+    app.world_mut().trigger(global_game_event::LevelCompleted {
+        level: 1,
+        score: 1000,
+    });
     app.update();
 
     app.world_mut().trigger(global_game_event::GamePaused);
@@ -220,22 +225,16 @@ fn test_enum_entity_event_with_entity_observers() {
     app.update();
 
     // Trigger entity events
-    app.world_mut().trigger(entity_health_event::Damaged {
-        entity,
-        amount: 30,
-    });
+    app.world_mut()
+        .trigger(entity_health_event::Damaged { entity, amount: 30 });
     app.update();
 
-    app.world_mut().trigger(entity_health_event::Healed {
-        entity,
-        amount: 10,
-    });
+    app.world_mut()
+        .trigger(entity_health_event::Healed { entity, amount: 10 });
     app.update();
 
-    app.world_mut().trigger(entity_health_event::Damaged {
-        entity,
-        amount: 20,
-    });
+    app.world_mut()
+        .trigger(entity_health_event::Damaged { entity, amount: 20 });
     app.update();
 
     // Verify health and log
@@ -297,8 +296,10 @@ fn test_enum_entity_event_propagation() {
     app.update();
 
     // Trigger event on child
-    app.world_mut()
-        .trigger(propagating_event::Signal { entity: child, value: 42 });
+    app.world_mut().trigger(propagating_event::Signal {
+        entity: child,
+        value: 42,
+    });
     app.update();
 
     // Verify both received the event (child first, then parent via propagation)
@@ -317,21 +318,27 @@ fn test_enum_entity_event_propagation() {
 // ============================================================================
 
 // EnumEvent for UI notifications (global)
+// The enum only exists to generate the `ui_notification` module used below.
 #[derive(EnumEvent, Clone, Debug)]
+#[allow(dead_code)]
 enum UiNotification {
     ShowToast(String),
     HideAllToasts,
 }
 
 // EnumMessage for command queue (buffered)
+// The enum only exists to generate the `game_command` module used below.
 #[derive(EnumMessage, Clone, Debug)]
+#[allow(dead_code)]
 enum GameCommand {
     SpawnEnemy { kind: String },
     DespawnAll,
 }
 
 // EnumEntityEvent for entity interactions (targeted)
+// The enum only exists to generate the `interaction_event` module used below.
 #[derive(EnumEntityEvent, Clone, Copy)]
+#[allow(dead_code)]
 enum InteractionEvent {
     Clicked { entity: Entity },
     Hovered { entity: Entity },
@@ -367,7 +374,10 @@ fn test_combined_usage_all_patterns() {
     // Add message system
     app.add_systems(
         Update,
-        (spawn_enemy_command, process_spawn_commands.after(spawn_enemy_command)),
+        (
+            spawn_enemy_command,
+            process_spawn_commands.after(spawn_enemy_command),
+        ),
     );
 
     // Add global observer for UI notifications

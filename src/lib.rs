@@ -1,6 +1,6 @@
 //! Derive macros that generate Bevy event and message types from enum variants.
 //!
-//! Each variant becomes a separate struct in a snake_case module.
+//! Each variant becomes a separate struct in a `snake_case` module.
 //!
 //! # Quick Start
 //!
@@ -263,7 +263,9 @@ const ALWAYS_DERIVED: &[&str] = &["Clone", "Debug"];
 const ALWAYS_DERIVED_UNIT: &[&str] = &["Copy", "Default"];
 
 fn path_last_ident(path: &syn::Path) -> Option<String> {
-    path.segments.last().map(|segment| segment.ident.to_string())
+    path.segments
+        .last()
+        .map(|segment| segment.ident.to_string())
 }
 
 /// Parses forwarded derives from `#[enum_event(derive(...))]` on the given
@@ -277,7 +279,10 @@ fn collect_forwarded_derives(attrs: &[Attribute], out: &mut Vec<syn::Path>) {
         if let Err(err) = attr.parse_nested_meta(|meta| {
             if path_ends_with_ident(&meta.path, "derive") {
                 meta.parse_nested_meta(|derive_meta| {
-                    if !out.iter().any(|existing| paths_match(existing, &derive_meta.path)) {
+                    if !out
+                        .iter()
+                        .any(|existing| paths_match(existing, &derive_meta.path))
+                    {
                         out.push(derive_meta.path.clone());
                     }
                     Ok(())
@@ -304,7 +309,9 @@ fn paths_match(a: &syn::Path, b: &syn::Path) -> bool {
 /// key we do not handle here, so `parse_nested_meta` can continue past it.
 fn skip_meta_value(meta: &syn::meta::ParseNestedMeta) {
     if meta.input.peek(syn::Token![=]) {
-        let _ = meta.value().and_then(|value| value.parse::<proc_macro2::TokenStream>());
+        let _ = meta
+            .value()
+            .and_then(syn::parse::ParseBuffer::parse::<proc_macro2::TokenStream>);
     } else if meta.input.peek(syn::token::Paren) {
         let _ = meta.parse_nested_meta(|_| Ok(()));
     }
@@ -314,9 +321,9 @@ fn skip_meta_value(meta: &syn::meta::ParseNestedMeta) {
 /// generated struct's `#[derive(...)]`, skipping any that the struct already
 /// derives (`skip`).
 fn forwarded_derive_tokens(forwarded: &[syn::Path], skip: &[&str]) -> proc_macro2::TokenStream {
-    let filtered = forwarded.iter().filter(|path| {
-        path_last_ident(path).is_none_or(|name| !skip.contains(&name.as_str()))
-    });
+    let filtered = forwarded
+        .iter()
+        .filter(|path| path_last_ident(path).is_none_or(|name| !skip.contains(&name.as_str())));
     quote! { #(, #filtered)* }
 }
 
@@ -420,7 +427,7 @@ fn analyze_variant_attrs(attrs: &[Attribute]) -> VariantAttrInfo {
 
 /// Generates Bevy `Event` types from enum variants for observer-based events.
 ///
-/// Creates a snake_case module with one event struct per variant.
+/// Creates a `snake_case` module with one event struct per variant.
 /// These events are triggered via `world.trigger()` and handled by observers.
 ///
 /// ```rust
@@ -442,7 +449,7 @@ pub fn derive_enum_events(input: TokenStream) -> TokenStream {
 
 /// Generates Bevy `Message` types from enum variants for buffered message passing.
 ///
-/// Creates a snake_case module with one message struct per variant.
+/// Creates a `snake_case` module with one message struct per variant.
 /// These messages are written via `MessageWriter` and read via `MessageReader`.
 /// Each generated type must be registered with `app.add_message::<T>()`.
 ///
@@ -1072,7 +1079,9 @@ fn derive_enum_event_impl(input: TokenStream, event_kind: EventKind) -> TokenStr
     };
 
     let module_doc = match event_kind {
-        EventKind::EntityEvent => "Generated module containing entity event types for each enum variant.",
+        EventKind::EntityEvent => {
+            "Generated module containing entity event types for each enum variant."
+        }
         EventKind::Message => "Generated module containing message types for each enum variant.",
         EventKind::Event => "Generated module containing event types for each enum variant.",
     };

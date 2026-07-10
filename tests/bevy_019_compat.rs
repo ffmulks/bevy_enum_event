@@ -28,12 +28,12 @@ enum LifecycleNamedEvent {
 fn test_lifecycle_named_event_variants_do_not_collide() {
     // Each generated struct must be constructible and distinct from Bevy's
     // prelude types of the same bare name.
-    let _add = lifecycle_named_event::Add;
+    let _: lifecycle_named_event::Add = lifecycle_named_event::Add;
     let insert = lifecycle_named_event::Insert(7);
     assert_eq!(insert.0, 7);
     let replace = lifecycle_named_event::Replace { value: 9 };
     assert_eq!(replace.value, 9);
-    let _remove = lifecycle_named_event::Remove;
+    let _: lifecycle_named_event::Remove = lifecycle_named_event::Remove;
     let despawn = lifecycle_named_event::Despawn {
         reason: "gone".to_string(),
     };
