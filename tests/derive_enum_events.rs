@@ -418,3 +418,116 @@ fn test_entity_event_multi_field_deref() {
     assert_eq!(*dereffed, entity);
     assert_eq!(scored.points, 100);
 }
+
+// ============================================================================
+// Forwarded derives (Copy, PartialEq, Eq, Hash, PartialOrd, Ord)
+// ============================================================================
+
+// Regression test for https://github.com/MolecularSadism/bevy_enum_event/issues/1
+// A proc-macro derive cannot see the enum's sibling `#[derive(...)]`, so
+// forwarding is opt-in via `#[enum_event(derive(...))]`. The listed derives
+// must reach every generated variant struct, not just unit variants.
+#[derive(EnumEvent, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[enum_event(derive(Copy, PartialEq, Eq, Hash, PartialOrd, Ord))]
+#[allow(dead_code)]
+enum ForwardedDerives {
+    Unit,
+    Tuple(u32),
+    Struct { value: i32 },
+}
+
+// Helper functions that only compile if the bound is actually implemented.
+fn assert_copy<T: Copy>(_: &T) {}
+fn assert_eq_trait<T: Eq>(_: &T) {}
+fn assert_hash<T: std::hash::Hash>(_: &T) {}
+fn assert_ord<T: Ord>(_: &T) {}
+
+#[test]
+fn test_forwarded_derives_on_all_variant_kinds() {
+    let unit = forwarded_derives::Unit;
+    let tuple = forwarded_derives::Tuple(7);
+    let strukt = forwarded_derives::Struct { value: -3 };
+
+    // Copy: a copy leaves the original usable.
+    let tuple_copy = tuple;
+    assert_eq!(tuple, tuple_copy);
+    assert_eq!(tuple.0, 7);
+
+    let struct_copy = strukt;
+    assert_eq!(strukt, struct_copy);
+    assert_eq!(strukt.value, -3);
+
+    // PartialEq / Eq
+    assert_ne!(forwarded_derives::Tuple(1), forwarded_derives::Tuple(2));
+
+    // Verify the trait bounds are genuinely satisfied for every variant kind.
+    assert_copy(&unit);
+    assert_copy(&tuple);
+    assert_copy(&strukt);
+    assert_eq_trait(&unit);
+    assert_eq_trait(&tuple);
+    assert_eq_trait(&strukt);
+    assert_hash(&unit);
+    assert_hash(&tuple);
+    assert_hash(&strukt);
+    assert_ord(&unit);
+    assert_ord(&tuple);
+    assert_ord(&strukt);
+}
+
+// Forwarded `Copy` must coexist with the auto-generated `Deref`/`DerefMut` on
+// single-field variants.
+#[derive(EnumEvent, Clone, Copy)]
+#[enum_event(derive(Copy))]
+#[allow(dead_code)]
+enum SmallEvents {
+    Health(u32),
+    Position { xy: (f32, f32) },
+}
+
+#[test]
+fn test_forwarded_copy_with_deref() {
+    let health = small_events::Health(100);
+    let health_copy = health;
+    // Original still usable after the copy.
+    assert_eq!(health.0, 100);
+    assert_eq!(health_copy.0, 100);
+    assert_copy(&health);
+
+    let pos = small_events::Position { xy: (1.0, 2.0) };
+    let pos_copy = pos;
+    assert_eq!(pos.xy, (1.0, 2.0));
+    assert_eq!(pos_copy.xy, (1.0, 2.0));
+    assert_copy(&pos);
+}
+
+// Per-variant `#[enum_event(derive(...))]` is additive to the enum-level list.
+#[derive(EnumEvent, Clone)]
+#[enum_event(derive(PartialEq))]
+#[allow(dead_code)]
+enum MixedCopyability {
+    // Not Copy: holds a String.
+    Named(String),
+    // Copy: opt in for just this variant, on top of the enum-level PartialEq.
+    #[enum_event(derive(Copy))]
+    Id {
+        value: u64,
+    },
+}
+
+#[test]
+fn test_variant_level_forwarded_derives() {
+    // Enum-level PartialEq reaches the non-Copy variant.
+    assert_eq!(
+        mixed_copyability::Named("a".to_string()),
+        mixed_copyability::Named("a".to_string())
+    );
+
+    let id = mixed_copyability::Id { value: 42 };
+    let id_copy = id;
+    assert_eq!(id.value, 42);
+    assert_eq!(id_copy.value, 42);
+    assert_copy(&id);
+    // Enum-level PartialEq also applies to the per-variant-augmented struct.
+    assert_eq!(id, id_copy);
+}

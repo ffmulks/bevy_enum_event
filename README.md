@@ -111,6 +111,44 @@ enum GameEvent {
 
 Disable with `default-features = false`.
 
+### Forwarding Derives (`Copy`, `PartialEq`, ...)
+
+The generated variant structs always derive `Clone` and `Debug` (and unit
+variants additionally derive `Copy` and `Default`). To put additional derives
+on the generated structs — most commonly `Copy`, since many events are tiny and
+copy cheaply — list them with `#[enum_event(derive(...))]` on the enum:
+
+```rust
+#[derive(EnumEvent, Clone, Copy, PartialEq)]
+#[enum_event(derive(Copy, PartialEq))]
+enum Input {
+    Jump,
+    Move { dx: f32, dy: f32 },
+}
+
+// input::Jump, input::Move, ... are all `Copy` + `PartialEq`.
+```
+
+A derive macro cannot see the *other* derives written next to it (the compiler
+consumes the `#[derive(...)]` list before the macro runs), so the derives to
+forward must be listed explicitly in `#[enum_event(derive(...))]`. Any derive
+whose bound is satisfied by the variant's fields is accepted; naming `Clone` or
+`Debug` (or `Copy`/`Default` on a unit variant) is a harmless no-op since those
+are already derived.
+
+Derives can also be applied to a single variant — additive to the enum-level
+list — which is useful when only some variants can satisfy the bound:
+
+```rust
+#[derive(EnumEvent, Clone)]
+enum Signal {
+    Message(String),          // holds a String: not `Copy`
+
+    #[enum_event(derive(Copy))]
+    Tick { frame: u64 },      // this variant's struct is `Copy`
+}
+```
+
 ## EnumMessage
 
 For buffered messages that are written/read between systems using `MessageWriter`/`MessageReader`.
